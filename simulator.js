@@ -1,139 +1,39 @@
-import World from "./world.js";
-import Device from "./device.js";
-import Memory from "./memory.js";
-import Brain from "./brain.js";
+// simulator.js – frontend napojený na Railway backend
 
-const STORAGE_KEY = "meteostation_sim_state_v1";
+const API_URL = "https://meteostanice-simulator-node-production.up.railway.app/state";
 
-function hasResetParam() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("reset") === "1";
+// globální stav
+window.STATE = null;
+
+// hlavní načtení dat
+async function loadState() {
+  try {
+    const res = await fetch(API_URL, {
+      cache: "no-store"
+    });
+
+    if (!res.ok) {
+      throw new Error("Backend nedostupný");
+    }
+
+    const state = await res.json();
+    window.STATE = state;
+
+    // předání dat UI
+    if (typeof updateUI === "function") {
+      updateUI(state);
+    }
+
+    // debug
+    console.log("STATE:", state);
+
+  } catch (err) {
+    console.error("Chyba spojení s backendem:", err);
+  }
 }
 
-let lastClosedDay = null;
+// první načtení
+loadState();
 
-const Simulator = {
-
-  init() {
-    const forceReset = hasResetParam();
-
-    if (forceReset) {
-      console.warn("⚠️ Reset simulace vyžádán URL parametrem");
-      localStorage.removeItem(STORAGE_KEY);
-    }
-
-    const saved = localStorage.getItem(STORAGE_KEY);
-
-    if (saved) {
-      try {
-        const s = JSON.parse(saved);
-
-        if (s.world) World.state = s.world;
-        else World.init();
-
-        if (s.device) Device.state = s.device;
-        else Device.init();
-
-        if (s.memory) Memory.state = s.memory;
-        if (s.brainInternal) Brain.internal = s.brainInternal;
-
-        lastClosedDay = s.lastClosedDay ?? null;
-
-      } catch (e) {
-        console.error("❌ Obnova stavu selhala, startuji čistý běh", e);
-
-        World.init();
-        Device.init();
-
-        // ⬇️ DŮLEŽITÁ OPRAVA – NIKDY undefined
-        Memory.state = {
-          today: {
-            samples: 0,
-            tempMin: null,
-            tempMax: null,
-            tempSum: 0,
-            energyInWh: 0,
-            energyOutWh: 0
-          },
-          history: []
-        };
-
-        Brain.internal = {
-          lastTemp: null,
-          tempTrend: 0,
-          lastMessage: "",
-          lastMessageTime: 0,
-          dayStartHour: null,
-          daySummary: "Den začíná, sbírám data."
-        };
-
-        lastClosedDay = null;
-      }
-    } else {
-      World.init();
-      Device.init();
-    }
-
-    setInterval(() => this.tick(), 1000);
-  },
-
-  tick() {
-    const world = World.tick();
-    const now = new Date(world.time.now);
-
-    const deviceBefore = Device.getState();
-
-    /* ===== PAMĚŤ (SBĚR DAT) ===== */
-    Memory.update({
-      temperature: deviceBefore.sensors.temperature,
-      energyInW: deviceBefore.power.solarInW,
-      energyOutW: deviceBefore.power.loadW
-    });
-
-    /* ===== UZAVŘENÍ DNE (SIMULOVANÝ ČAS) ===== */
-    const dayKey = now.toDateString();
-
-    if (
-      now.getHours() === 23 &&
-      now.getMinutes() === 59 &&
-      lastClosedDay !== dayKey
-    ) {
-      Memory.closeDay(now);
-      lastClosedDay = dayKey;
-    }
-
-    const brain = Brain.evaluate({
-      time: world.time,
-      env: world.environment,
-      battery: deviceBefore.battery,
-      power: deviceBefore.power
-    });
-
-    const device = Device.tick(world, brain);
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      world: World.state,
-      device: Device.state,
-      memory: Memory.state,
-      brainInternal: Brain.internal,
-      lastClosedDay
-    }));
-
-    window.dispatchEvent(new CustomEvent("simulator:update", {
-      detail: {
-        time: world.time,
-        environment: world.environment,
-        sensors: device.sensors,
-        battery: device.battery,
-        power: device.power,
-        fan: brain.fan,
-        fanPower: brain.fanPower,
-        mode: brain.mode,
-        message: brain.mainMessage,
-        details: brain.details
-      }
-    }));
-  }
-};
-
-window.addEventListener("DOMContentLoaded", () => Simulator.init());
+// živá aktualizace – 1s = 1s simulace
+setInterval(loadState, 1000);
