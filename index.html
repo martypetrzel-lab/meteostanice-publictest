@@ -2,73 +2,73 @@
 <html lang="cs">
 <head>
   <meta charset="UTF-8" />
-  <title>Meteostanice-test</title>
+  <title>Meteostanice – Public Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <script type="module" src="world.js"></script>
-  <script type="module" src="device.js"></script>
-  <script type="module" src="memory.js"></script>
-  <script type="module" src="brain.js"></script>
-  <script type="module" src="simulator.js"></script>
-  <script defer src="ui.js"></script>
 </head>
-
 <body>
 
-<header>
-  <button id="btnToday" class="active">DNES</button>
-  <button id="btnHistory">HISTORIE</button>
-  <button id="btnEnergy">ENERGIE</button>
-</header>
+  <div class="app">
 
-<main>
+    <!-- HLAVIČKA -->
+    <header class="header">
+      <h1>🌦️ Meteostanice – Public Test</h1>
+      <p class="subtitle">Živá simulace chování chytré meteostanice</p>
+    </header>
 
-  <!-- ===== DNES ===== -->
-  <section id="view-today" class="view active">
-    <div class="card message"><h2 id="message">Načítám…</h2></div>
+    <!-- META INFO -->
+    <section class="sim-meta">
+      <div id="real-time">Čas: --:--:--</div>
+      <div id="sim-day">Den -- / 21</div>
 
-    <div class="card status">
-      <div>Čas: <span id="time"></span></div>
-      <div>Režim: <span id="mode"></span></div>
-    </div>
+      <div class="progress-wrapper">
+        <div id="sim-progress" class="progress-bar"></div>
+      </div>
+    </section>
 
-    <div class="tiles">
-      <div class="tile"><div class="tile-title">🌡️ Teplota</div><div class="tile-value" id="temp"></div></div>
-      <div class="tile"><div class="tile-title">🔋 Baterie</div><div class="tile-value" id="battery"></div></div>
-      <div class="tile"><div class="tile-title">☀️ Světlo</div><div class="tile-value" id="light"></div></div>
-      <div class="tile"><div class="tile-title">🌀 Větrák</div><div class="tile-value" id="fan"></div></div>
-    </div>
+    <!-- STAV -->
+    <section class="status">
+      <div id="status-message">Načítám data…</div>
+      <div id="status-mode">Režim: --</div>
+    </section>
 
-    <div class="card"><h3>📈 Teplota dnes</h3><canvas id="todayChart"></canvas></div>
-    <div class="card small-text" id="details"></div>
-  </section>
+    <!-- KARTY -->
+    <section class="cards">
 
-  <!-- ===== HISTORIE ===== -->
-  <section id="view-history" class="view">
-    <div class="card">
-      <h2>📆 Týdenní přehled teplot</h2>
-      <canvas id="historyChart"></canvas>
-    </div>
-  </section>
+      <div class="card">
+        <h3>🌡️ Teplota</h3>
+        <div class="value" id="temp">-- °C</div>
+      </div>
 
-  <!-- ===== ENERGIE ===== -->
-  <section id="view-energy" class="view">
+      <div class="card">
+        <h3>🔋 Baterie</h3>
+        <div class="value" id="battery">-- V</div>
+      </div>
 
-    <!-- ENERGETICKÉ KARTY -->
-    <div class="tiles">
-      <div class="tile"><div class="tile-title">☀️ Příjem</div><div class="tile-value" id="energyIn"></div></div>
-      <div class="tile"><div class="tile-title">🔌 Výdej</div><div class="tile-value" id="energyOut"></div></div>
-      <div class="tile"><div class="tile-title">⚖️ Bilance</div><div class="tile-value" id="energyBalance"></div></div>
-      <div class="tile"><div class="tile-title">🔋 Stav</div><div class="tile-value" id="energyState"></div></div>
-    </div>
+      <div class="card">
+        <h3>☀️ Světlo</h3>
+        <div class="value" id="light">-- lx</div>
+      </div>
 
-    <div class="card"><h3>⚡ Energie dnes</h3><canvas id="energyTodayChart"></canvas><p id="energySummary"></p></div>
-    <div class="card"><h3>📊 Týdenní bilance</h3><canvas id="energyWeekChart"></canvas></div>
+      <div class="card">
+        <h3>🌬️ Větrák</h3>
+        <div class="value" id="fan">--</div>
+      </div>
 
-  </section>
+    </section>
 
-</main>
+    <!-- DETAILY -->
+    <section class="details">
+      <h3>📋 Detaily</h3>
+      <ul id="details-list"></ul>
+    </section>
+
+  </div>
+
+  <!-- LOGIKA -->
+  <script src="ui.js"></script>
+  <script src="simulator.js"></script>
+
 </body>
 </html>
