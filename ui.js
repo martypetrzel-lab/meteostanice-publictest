@@ -34,7 +34,10 @@ const todayChart = new Chart($("todayChart"), {
       pointRadius: 2
     }]
   },
-  options: { animation: false, plugins: { legend: { display: false } } }
+  options: {
+    animation: false,
+    plugins: { legend: { display: false } }
+  }
 });
 
 const historyChart = new Chart($("historyChart"), {
@@ -83,10 +86,41 @@ let lastEnergyUpdate = 0;
 const INTERVAL = 60 * 1000;
 
 let energyTodayWh = 0;
-let historyDays = [];
-let energyDays = [];
 
-/* ===== UPDATE ===== */
+/* ===== OBNOVA Z PAMĚTI PO REFRESHI ===== */
+function restoreFromMemory() {
+  if (!window.Memory || !Memory.state) return;
+
+  /* === HISTORIE TEPLOT === */
+  if (Memory.state.history && Memory.state.history.length > 0) {
+    historyChart.data.labels =
+      Memory.state.history.map(d => d.day);
+
+    historyChart.data.datasets[0].data =
+      Memory.state.history.map(d => d.tempMin);
+
+    historyChart.data.datasets[1].data =
+      Memory.state.history.map(d => d.tempMax);
+
+    historyChart.update();
+  }
+
+  /* === DNEŠNÍ ENERGIE === */
+  if (Memory.state.today) {
+    const inWh = Memory.state.today.energyInWh || 0;
+    const outWh = Memory.state.today.energyOutWh || 0;
+    energyTodayWh = inWh - outWh;
+
+    const el = $("energySummary");
+    if (el) {
+      el.textContent = `Bilance dnes: ${energyTodayWh.toFixed(2)} Wh`;
+    }
+  }
+}
+
+window.addEventListener("DOMContentLoaded", restoreFromMemory);
+
+/* ===== LIVE UPDATE ZE SIMULÁTORU ===== */
 window.addEventListener("simulator:update", (e) => {
   const d = e.detail;
   const now = new Date(d.time.now);
@@ -102,7 +136,7 @@ window.addEventListener("simulator:update", (e) => {
   $("fan").textContent = d.fan ? `zapnut (${d.fanPower}%)` : "vypnut";
   $("details").textContent = d.details.join(" · ");
 
-  /* ===== OKAMŽITÁ ENERGIE (NOVÉ) ===== */
+  /* ===== OKAMŽITÁ ENERGIE ===== */
   const inW = d.power.solarInW;
   const outW = d.power.loadW;
   const balance = inW - outW;
@@ -146,39 +180,8 @@ window.addEventListener("simulator:update", (e) => {
     lastEnergyUpdate = d.time.now;
   }
 
-  /* ===== WH VÝPOČET ===== */
+  /* ===== WH BILANCE ===== */
   energyTodayWh += balance / 3600;
   $("energySummary").textContent =
     `Bilance dnes: ${energyTodayWh.toFixed(2)} Wh`;
-
-  /* ===== UZAVŘENÍ DNE ===== */
-  if (now.getHours() === 23 && now.getMinutes() === 59) {
-
-    historyDays.push({
-      day: now.toLocaleDateString("cs-CZ", { weekday: "short" }),
-      min: Math.min(...todayChart.data.datasets[0].data),
-      max: Math.max(...todayChart.data.datasets[0].data)
-    });
-    if (historyDays.length > 7) historyDays.shift();
-
-    historyChart.data.labels = historyDays.map(d => d.day);
-    historyChart.data.datasets[0].data = historyDays.map(d => d.min);
-    historyChart.data.datasets[1].data = historyDays.map(d => d.max);
-    historyChart.update();
-
-    energyDays.push({
-      day: now.toLocaleDateString("cs-CZ", { weekday: "short" }),
-      wh: +energyTodayWh.toFixed(2)
-    });
-    if (energyDays.length > 7) energyDays.shift();
-
-    energyWeekChart.data.labels = energyDays.map(d => d.day);
-    energyWeekChart.data.datasets[0].data = energyDays.map(d => d.wh);
-    energyWeekChart.update();
-
-    energyTodayWh = 0;
-    energyTodayChart.data.labels = [];
-    energyTodayChart.data.datasets.forEach(ds => ds.data = []);
-    energyTodayChart.update();
-  }
 });
