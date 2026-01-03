@@ -1,6 +1,6 @@
 /* ================================
    world.js
-   Reálný den / noc podle skutečného času
+   Reálný čas = reálný den / noc
    ================================ */
 
 const World = {
@@ -11,8 +11,8 @@ const World = {
       isDay: true
     },
     environment: {
-      temperature: 20,
-      targetTemp: 20,
+      temperature: 16,
+      targetTemp: 16,
 
       light: 0,
       targetLight: 0,
@@ -22,51 +22,55 @@ const World = {
   },
 
   init() {
+    // ⏰ NAVÁZÁNÍ NA REÁLNÝ ČAS
     this.state.time.now = Date.now();
-    this.state.environment.temperature = 20;
+
+    // startovní hodnoty (jen jednou)
+    this.state.environment.temperature = 16;
     this.state.environment.light = 0;
   },
 
   tick() {
-    // === SIMULOVANÝ ČAS (běží dál) ===
+    // ⏱ POSUN ČASU – 1 s = 1 s reality
     this.state.time.now += 1000;
 
-    // === REÁLNÝ ČAS (pro světlo) ===
-    const realNow = new Date();
-    const hour = realNow.getHours();
-    const minute = realNow.getMinutes();
+    const date = new Date(this.state.time.now);
+    const hour = date.getHours();
+    const minute = date.getMinutes();
 
-    // zjednodušený den/noc model (později půjde zpřesnit)
-    this.state.time.isDay = hour >= 7 && hour < 17;
+    // 🌞 DEN / NOC
+    this.state.time.isDay = hour >= 6 && hour < 20;
 
-    /* ===== OBLAČNOST (POMALÁ ZMĚNA) ===== */
-    if (Math.random() < 0.002) {
-      this.state.environment.cloudiness += (Math.random() - 0.5) * 0.1;
+    /* ===== OBLAČNOST (POMALÁ, REALISTICKÁ) ===== */
+    if (Math.random() < 0.001) {
+      this.state.environment.cloudiness += (Math.random() - 0.5) * 0.05;
       this.state.environment.cloudiness =
         Math.min(1, Math.max(0, this.state.environment.cloudiness));
     }
 
-    /* ===== SVĚTLO PODLE REÁLNÉHO ČASU ===== */
+    /* ===== SVĚTLO ===== */
     if (this.state.time.isDay) {
-      const dayProgress = (hour + minute / 60 - 7) / 10; // 7–17
+      const dayProgress = (hour + minute / 60 - 6) / 14; // 6–20
       const sunStrength = Math.sin(dayProgress * Math.PI);
       const maxLux = 1000;
 
       this.state.environment.targetLight =
         maxLux * sunStrength * (1 - this.state.environment.cloudiness);
     } else {
-      this.state.environment.targetLight = 2; // noc
+      // noc
+      this.state.environment.targetLight = 2;
     }
 
     // setrvačnost světla
     const lightDiff =
       this.state.environment.targetLight - this.state.environment.light;
-    this.state.environment.light += lightDiff * 0.08;
+    this.state.environment.light += lightDiff * 0.05;
 
-    /* ===== TEPLOTA (STÁLE SIMULOVANÁ) ===== */
-    const dayTarget = this.state.time.isDay
-      ? 18 + (hour - 7) * 0.4
-      : 16;
+    /* ===== TEPLOTA ===== */
+    const dayTarget =
+      this.state.time.isDay
+        ? 16 + (hour - 6) * 0.4
+        : 14;
 
     this.state.environment.targetTemp = dayTarget;
 
