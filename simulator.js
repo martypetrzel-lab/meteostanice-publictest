@@ -36,5 +36,5 @@ async function loadState() {
 loadState();
 
 // živá aktualizace – 1s = 1s simulace
-loadState();                 // hned po startu
-setInterval(loadState, 1000); // každou sekundu
+loadState();
+setInterval(loadState, 1000);
