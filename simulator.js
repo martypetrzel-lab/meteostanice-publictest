@@ -37,3 +37,5 @@ loadState();
 
 // živá aktualizace – 1s = 1s simulace
 setInterval(loadState, 1000);
+loadState();                 // hned po startu
+setInterval(loadState, 1000); // každou sekundu
