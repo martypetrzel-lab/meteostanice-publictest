@@ -39,36 +39,36 @@ const Simulator = {
 
         lastClosedDay = s.lastClosedDay ?? null;
 
-      catch (e) {
-  console.error("❌ Obnova stavu selhala, startuji čistý běh", e);
+      } catch (e) {
+        console.error("❌ Obnova stavu selhala, startuji čistý běh", e);
 
-  World.init();
-  Device.init();
+        World.init();
+        Device.init();
 
-  Memory.state = {
-    today: {
-      samples: 0,
-      tempMin: null,
-      tempMax: null,
-      tempSum: 0,
-      energyInWh: 0,
-      energyOutWh: 0
-    },
-    history: []
-  };
+        // ⬇️ DŮLEŽITÁ OPRAVA – NIKDY undefined
+        Memory.state = {
+          today: {
+            samples: 0,
+            tempMin: null,
+            tempMax: null,
+            tempSum: 0,
+            energyInWh: 0,
+            energyOutWh: 0
+          },
+          history: []
+        };
 
-  Brain.internal = {
-    lastTemp: null,
-    tempTrend: 0,
-    lastMessage: "",
-    lastMessageTime: 0,
-    dayStartHour: null,
-    daySummary: "Den začíná, sbírám data."
-  };
+        Brain.internal = {
+          lastTemp: null,
+          tempTrend: 0,
+          lastMessage: "",
+          lastMessageTime: 0,
+          dayStartHour: null,
+          daySummary: "Den začíná, sbírám data."
+        };
 
-  lastClosedDay = null;
-}
-
+        lastClosedDay = null;
+      }
     } else {
       World.init();
       Device.init();
@@ -137,4 +137,3 @@ const Simulator = {
 };
 
 window.addEventListener("DOMContentLoaded", () => Simulator.init());
-
