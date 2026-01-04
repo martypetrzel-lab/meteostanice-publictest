@@ -9,15 +9,15 @@ const views = {
 };
 
 function show(view, btn) {
-  Object.values(views).forEach(v => v.classList.remove("active"));
+  Object.values(views).forEach(v => v && v.classList.remove("active"));
   document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
-  views[view].classList.add("active");
+  if (views[view]) views[view].classList.add("active");
   btn.classList.add("active");
 }
 
-$("btnToday").onclick = () => show("today", $("btnToday"));
-$("btnHistory").onclick = () => show("history", $("btnHistory"));
-$("btnEnergy").onclick = () => show("energy", $("btnEnergy"));
+$("btnToday")?.addEventListener("click", () => show("today", $("btnToday")));
+$("btnHistory")?.addEventListener("click", () => show("history", $("btnHistory")));
+$("btnEnergy")?.addEventListener("click", () => show("energy", $("btnEnergy")));
 
 /* ===== GRAFY ===== */
 const todayChart = new Chart($("todayChart"), {
@@ -52,7 +52,7 @@ async function loadState() {
     const res = await fetch(API);
     const s = await res.json();
 
-    /* === HLAVNÍ DATA === */
+    /* === ZÁKLAD === */
     if ($("time")) $("time").innerText = new Date(s.time.now).toLocaleTimeString("cs-CZ");
     if ($("mode")) $("mode").innerText = s.mode;
 
@@ -62,7 +62,7 @@ async function loadState() {
     if ($("fan")) $("fan").innerText = s.fan ? "ON" : "OFF";
 
     /* === TEPLOTA DNES === */
-    const t = s.memory.today.temperature;
+    const t = s.memory.today.temperature || [];
     todayChart.data.labels = t.map(x => new Date(x.t).toLocaleTimeString("cs-CZ"));
     todayChart.data.datasets[0].data = t.map(x => x.v);
     todayChart.update();
@@ -72,8 +72,9 @@ async function loadState() {
     if ($("energyOut")) $("energyOut").innerText = s.power.loadW.toFixed(2);
     if ($("energyBalance")) $("energyBalance").innerText = s.power.balanceWh.toFixed(3);
 
-    const ei = s.memory.today.energyIn;
-    const eo = s.memory.today.energyOut;
+    const ei = s.memory.today.energyIn || [];
+    const eo = s.memory.today.energyOut || [];
+
     energyTodayChart.data.labels = ei.map(x => new Date(x.t).toLocaleTimeString("cs-CZ"));
     energyTodayChart.data.datasets[0].data = ei.map(x => x.v);
     energyTodayChart.data.datasets[1].data = eo.map(x => x.v);
@@ -82,7 +83,7 @@ async function loadState() {
     if ($("loading")) $("loading").style.display = "none";
 
   } catch (e) {
-    console.error("Chyba načtení stavu", e);
+    console.error("Chyba načtení stavu:", e);
   }
 }
 
