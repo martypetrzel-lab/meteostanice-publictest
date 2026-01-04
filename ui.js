@@ -1,38 +1,76 @@
-document.querySelectorAll(".tab").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+const $ = id => document.getElementById(id);
 
-    btn.classList.add("active");
-    document.getElementById(btn.dataset.tab).classList.add("active");
-  });
+/* ===== ZÁLOŽKY ===== */
+const views = {
+  today: $("view-today"),
+  history: $("view-history"),
+  energy: $("view-energy")
+};
+
+function show(view, btn) {
+  Object.values(views).forEach(v => v.classList.remove("active"));
+  $("btnToday").classList.remove("active");
+  $("btnHistory").classList.remove("active");
+  $("btnEnergy").classList.remove("active");
+
+  views[view].classList.add("active");
+  btn.classList.add("active");
+}
+
+$("btnToday").onclick = () => show("today", $("btnToday"));
+$("btnHistory").onclick = () => show("history", $("btnHistory"));
+$("btnEnergy").onclick = () => show("energy", $("btnEnergy"));
+
+/* ===== GRAFY ===== */
+const todayChart = new Chart($("todayChart"), {
+  type: "line",
+  data: { labels: [], datasets: [{ data: [], borderColor: "#3b82f6", tension: 0.35 }] },
+  options: { animation: false, plugins: { legend: { display: false } } }
 });
 
-function updateUI(state) {
-  if (!state) return;
+const historyChart = new Chart($("historyChart"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { data: [], borderColor: "#60a5fa" },
+    { data: [], borderColor: "#ef4444" }
+  ]},
+  options: { animation: false }
+});
 
-  const now = new Date(state.time.now);
-  document.getElementById("timeText").textContent =
-    "Čas: " + now.toLocaleTimeString("cs-CZ");
+const energyTodayChart = new Chart($("energyTodayChart"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { data: [], borderColor: "#22c55e" },
+    { data: [], borderColor: "#ef4444" }
+  ]},
+  options: { animation: false }
+});
 
-  const day = Math.floor((state.time.now / 1000 / 86400) % 21) + 1;
-  document.getElementById("dayText").textContent = `Den ${day} / 21`;
+const energyWeekChart = new Chart($("energyWeekChart"), {
+  type: "bar",
+  data: { labels: [], datasets: [{ data: [], backgroundColor: "#3b82f6" }] },
+  options: { animation: false }
+});
 
-  const dayProgress = ((now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400) * 100;
-  document.getElementById("dayProgress").style.width = `${dayProgress}%`;
+/* ===== UPDATE ===== */
+window.addEventListener("simulator:update", (e) => {
+  const d = e.detail;
+  const now = new Date(d.time.now);
 
-  document.getElementById("modeText").textContent = `Režim: ${state.mode}`;
+  $("time").textContent = now.toLocaleTimeString("cs-CZ");
+  $("dayIndex").textContent = d.time.dayIndex;
 
-  document.getElementById("temp").textContent = state.sensors.temperature.toFixed(1);
-  document.getElementById("battery").textContent = state.battery.voltage.toFixed(2);
-  document.getElementById("light").textContent = Math.round(state.sensors.light);
-  document.getElementById("fan").textContent = state.fan ? "Zapnutý" : "Vypnutý";
+  const progress = ((now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400) * 100;
+  $("dayProgress").style.width = progress + "%";
 
-  const list = document.getElementById("details");
-  list.innerHTML = "";
-  state.details.forEach(d => {
-    const li = document.createElement("li");
-    li.textContent = d;
-    list.appendChild(li);
-  });
-}
+  $("message").textContent = d.message;
+  $("details").textContent = d.details.join(" · ");
+  $("temp").textContent = d.sensors.temperature.toFixed(1) + " °C";
+  $("battery").textContent = d.battery.voltage.toFixed(2) + " V";
+  $("light").textContent = Math.round(d.environment.light) + " lx";
+  $("fan").textContent = d.fan ? "zapnut" : "vypnut";
+
+  $("energyIn").textContent = d.power.solarInW.toFixed(2) + " W";
+  $("energyOut").textContent = d.power.loadW.toFixed(2) + " W";
+  $("energyBalance").textContent = (d.power.solarInW - d.power.loadW).toFixed(2) + " W";
+});

@@ -2,65 +2,72 @@
 <html lang="cs">
 <head>
   <meta charset="UTF-8" />
-  <title>Meteostanice – Public Test</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meteostanice – public test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-<header class="header">
-  <h1>🌦 Meteostanice – Public Test</h1>
-  <p>Živá simulace chování chytré meteostanice</p>
+<header>
+  <button id="btnToday" class="active">DNES</button>
+  <button id="btnHistory">HISTORIE</button>
+  <button id="btnEnergy">ENERGIE</button>
 </header>
 
-<nav class="tabs">
-  <button class="tab active" data-tab="today">DNES</button>
-  <button class="tab" data-tab="history">HISTORIE</button>
-  <button class="tab" data-tab="energy">ENERGIE</button>
-</nav>
+<main>
 
-<main class="content">
-
-  <!-- DNES -->
-  <section id="today" class="tab-content active">
-    <div class="card">
-      <div id="timeText">Čas: --:--:--</div>
-      <div id="dayText">Den -- / 21</div>
+  <div class="card status">
+    <div>
+      Čas: <strong id="time">--:--:--</strong><br>
+      Den <strong id="dayIndex">--</strong> / 21
+    </div>
+    <div style="flex:1;align-self:center">
       <div class="progress">
         <div id="dayProgress"></div>
       </div>
     </div>
+  </div>
 
-    <div class="card">
-      <strong id="modeText">Načítám data…</strong>
+  <section id="view-today" class="view active">
+    <div class="card message">
+      <h2 id="message">---</h2>
+      <div class="small-text" id="details"></div>
     </div>
 
-    <div class="grid">
-      <div class="box">🌡 Teplota<br><span id="temp">--</span> °C</div>
-      <div class="box">🔋 Baterie<br><span id="battery">--</span> V</div>
-      <div class="box">☀ Světlo<br><span id="light">--</span> lx</div>
-      <div class="box">🌀 Větrák<br><span id="fan">--</span></div>
+    <div class="tiles">
+      <div class="tile"><div class="tile-title">Teplota</div><div class="tile-value" id="temp">--</div></div>
+      <div class="tile"><div class="tile-title">Baterie</div><div class="tile-value" id="battery">--</div></div>
+      <div class="tile"><div class="tile-title">Světlo</div><div class="tile-value" id="light">--</div></div>
+      <div class="tile"><div class="tile-title">Ventilátor</div><div class="tile-value" id="fan">--</div></div>
     </div>
 
     <div class="card">
-      <h3>📋 Detaily</h3>
-      <ul id="details"></ul>
-    </div>
-  </section>
-
-  <!-- HISTORIE -->
-  <section id="history" class="tab-content">
-    <div class="card">
-      <h3>📈 Historie</h3>
-      <p>Historická data budou doplněna (grafy, dny, týdny).</p>
+      <canvas id="todayChart"></canvas>
     </div>
   </section>
 
-  <!-- ENERGIE -->
-  <section id="energy" class="tab-content">
+  <section id="view-history" class="view">
     <div class="card">
-      <h3>⚡ Energie</h3>
-      <p>Výroba, spotřeba a bilance energie – připravuje se.</p>
+      <canvas id="historyChart"></canvas>
+    </div>
+  </section>
+
+  <section id="view-energy" class="view">
+    <div class="tiles">
+      <div class="tile"><div class="tile-title">Příjem</div><div class="tile-value" id="energyIn">--</div></div>
+      <div class="tile"><div class="tile-title">Výdej</div><div class="tile-value" id="energyOut">--</div></div>
+      <div class="tile"><div class="tile-title">Bilance</div><div class="tile-value" id="energyBalance">--</div></div>
+      <div class="tile"><div class="tile-title">Stav</div><div class="tile-value" id="energyState">--</div></div>
+    </div>
+
+    <div class="card">
+      <canvas id="energyTodayChart"></canvas>
+    </div>
+
+    <div class="card">
+      <div id="energySummary">Bilance dnes: 0 Wh</div>
+      <canvas id="energyWeekChart"></canvas>
     </div>
   </section>
 
