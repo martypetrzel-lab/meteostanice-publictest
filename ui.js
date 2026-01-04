@@ -23,7 +23,7 @@ $("btnEnergy").onclick = () => show("energy", $("btnEnergy"));
 const todayChart = new Chart($("todayChart"), {
   type: "line",
   data: { labels: [], datasets: [{ data: [], borderColor: "#3b82f6", tension: 0.3 }] },
-  options: { animation: false }
+  options: { animation: false, plugins: { legend: { display: false } } }
 });
 
 const historyChart = new Chart($("historyChart"), {
@@ -31,8 +31,8 @@ const historyChart = new Chart($("historyChart"), {
   data: {
     labels: [],
     datasets: [
-      { label: "Min", data: [], borderColor: "#60a5fa" },
-      { label: "Max", data: [], borderColor: "#ef4444" }
+      { label: "Min (°C)", data: [], borderColor: "#60a5fa" },
+      { label: "Max (°C)", data: [], borderColor: "#ef4444" }
     ]
   },
   options: { animation: false }
@@ -43,8 +43,8 @@ const energyTodayChart = new Chart($("energyTodayChart"), {
   data: {
     labels: [],
     datasets: [
-      { label: "Příjem", data: [], borderColor: "#22c55e" },
-      { label: "Výdej", data: [], borderColor: "#ef4444" }
+      { label: "Příjem (W)", data: [], borderColor: "#22c55e" },
+      { label: "Výdej (W)", data: [], borderColor: "#ef4444" }
     ]
   },
   options: { animation: false }
@@ -52,42 +52,51 @@ const energyTodayChart = new Chart($("energyTodayChart"), {
 
 const energyWeekChart = new Chart($("energyWeekChart"), {
   type: "bar",
-  data: { labels: [], datasets: [{ data: [], backgroundColor: "#3b82f6" }] },
+  data: { labels: [], datasets: [{ label: "Denní bilance (Wh)", data: [], backgroundColor: "#3b82f6" }] },
   options: { animation: false }
 });
 
-/* ===== UPDATE ===== */
-async function update() {
-  const r = await fetch(API);
-  const d = await r.json();
+/* ===== FETCH ===== */
+async function load() {
+  const res = await fetch(API, { cache: "no-store" });
+  const d = await res.json();
 
   const now = new Date(d.time.now);
   $("time").textContent = now.toLocaleTimeString();
-  $("message").textContent = d.message;
   $("mode").textContent = d.mode;
+  $("message").textContent = d.message;
+
   $("temp").textContent = d.sensors.temperature.toFixed(1) + " °C";
   $("battery").textContent = d.battery.voltage.toFixed(2) + " V";
+  $("light").textContent = Math.round(d.environment.light) + " lx";
+  $("fan").textContent = d.fan ? "zapnut" : "vypnut";
+  $("details").textContent = d.details.join(" · ");
 
-  /* ===== DNES ===== */
-  todayChart.data.labels = d.memory.today.map(p => p.time);
-  todayChart.data.datasets[0].data = d.memory.today.map(p => p.temp);
-  todayChart.update();
+  const seconds = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+  $("dayProgress").style.width = (seconds / 86400 * 100) + "%";
+  $("dayIndex").textContent = d.time.dayIndex;
 
-  /* ===== HISTORIE ===== */
-  historyChart.data.labels = d.memory.days.map(d => d.day);
-  historyChart.data.datasets[0].data = d.memory.days.map(d => d.min);
-  historyChart.data.datasets[1].data = d.memory.days.map(d => d.max);
-  historyChart.update();
+  /* ===== PAMĚŤ ZE SERVERU ===== */
+  if (d.memory) {
+    todayChart.data.labels = d.memory.today.labels;
+    todayChart.data.datasets[0].data = d.memory.today.temperatures;
+    todayChart.update();
 
-  /* ===== ENERGIE ===== */
-  energyTodayChart.data.labels = d.memory.today.map(p => p.time);
-  energyTodayChart.data.datasets[0].data = d.memory.today.map(p => p.inW);
-  energyTodayChart.data.datasets[1].data = d.memory.today.map(p => p.outW);
-  energyTodayChart.update();
+    historyChart.data.labels = d.memory.week.labels;
+    historyChart.data.datasets[0].data = d.memory.week.min;
+    historyChart.data.datasets[1].data = d.memory.week.max;
+    historyChart.update();
 
-  energyWeekChart.data.labels = d.memory.energyDays.map(d => d.day);
-  energyWeekChart.data.datasets[0].data = d.memory.energyDays.map(d => d.wh);
-  energyWeekChart.update();
+    energyTodayChart.data.labels = d.memory.today.labels;
+    energyTodayChart.data.datasets[0].data = d.memory.today.energyIn;
+    energyTodayChart.data.datasets[1].data = d.memory.today.energyOut;
+    energyTodayChart.update();
+
+    energyWeekChart.data.labels = d.memory.week.labels;
+    energyWeekChart.data.datasets[0].data = d.memory.week.energyWh;
+    energyWeekChart.update();
+  }
 }
 
-setInterval(update, 1000);
+setInterval(load, 1000);
+load();
