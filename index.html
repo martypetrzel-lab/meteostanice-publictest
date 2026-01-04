@@ -1,117 +1,74 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Meteostanice – Public Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- STYLY -->
-  <link rel="stylesheet" href="./style.css">
-
-  <!-- CHART.JS -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
 
-<header>
-  <button id="btnToday" class="active">DNES</button>
-  <button id="btnHistory">HISTORIE</button>
-  <button id="btnEnergy">ENERGIE</button>
-</header>
+  <div class="app">
 
-<main>
+    <!-- HLAVIČKA -->
+    <header class="header">
+      <h1>🌦️ Meteostanice – Public Test</h1>
+      <p class="subtitle">Živá simulace chování chytré meteostanice</p>
+    </header>
 
-  <div class="card message">
-    <h2 id="message">Načítám...</h2>
+    <!-- META INFO -->
+    <section class="sim-meta">
+      <div id="real-time">Čas: --:--:--</div>
+      <div id="sim-day">Den -- / 21</div>
+
+      <div class="progress-wrapper">
+        <div id="sim-progress" class="progress-bar"></div>
+      </div>
+    </section>
+
+    <!-- STAV -->
+    <section class="status">
+      <div id="status-message">Načítám data…</div>
+      <div id="status-mode">Režim: --</div>
+    </section>
+
+    <!-- KARTY -->
+    <section class="cards">
+
+      <div class="card">
+        <h3>🌡️ Teplota</h3>
+        <div class="value" id="temp">-- °C</div>
+      </div>
+
+      <div class="card">
+        <h3>🔋 Baterie</h3>
+        <div class="value" id="battery">-- V</div>
+      </div>
+
+      <div class="card">
+        <h3>☀️ Světlo</h3>
+        <div class="value" id="light">-- lx</div>
+      </div>
+
+      <div class="card">
+        <h3>🌬️ Větrák</h3>
+        <div class="value" id="fan">--</div>
+      </div>
+
+    </section>
+
+    <!-- DETAILY -->
+    <section class="details">
+      <h3>📋 Detaily</h3>
+      <ul id="details-list"></ul>
+    </section>
+
   </div>
 
-  <div class="card status">
-    <div>Čas: <strong id="time">--:--:--</strong></div>
-    <div id="day">Den -- / 21</div>
-    <div>Režim: <strong id="mode">--</strong></div>
-  </div>
-
-  <div class="progress">
-    <div id="dayProgress"></div>
-  </div>
-
-  <!-- DNES -->
-  <section id="view-today" class="view active">
-
-    <div class="tiles">
-      <div class="tile">
-        <div class="tile-title">Teplota</div>
-        <div id="temp" class="tile-value">-- °C</div>
-      </div>
-
-      <div class="tile">
-        <div class="tile-title">Baterie</div>
-        <div id="battery" class="tile-value">-- V</div>
-      </div>
-
-      <div class="tile">
-        <div class="tile-title">Světlo</div>
-        <div id="light" class="tile-value">-- lx</div>
-      </div>
-
-      <div class="tile">
-        <div class="tile-title">Větrák</div>
-        <div id="fan" class="tile-value">--</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <canvas id="todayChart"></canvas>
-    </div>
-
-    <div class="card small-text" id="details"></div>
-
-  </section>
-
-  <!-- HISTORIE -->
-  <section id="view-history" class="view">
-    <div class="card">
-      <canvas id="historyChart"></canvas>
-    </div>
-  </section>
-
-  <!-- ENERGIE -->
-  <section id="view-energy" class="view">
-    <div class="tiles">
-      <div class="tile">
-        <div class="tile-title">Příjem</div>
-        <div id="energyIn" class="tile-value">0 W</div>
-      </div>
-      <div class="tile">
-        <div class="tile-title">Výdej</div>
-        <div id="energyOut" class="tile-value">0 W</div>
-      </div>
-      <div class="tile">
-        <div class="tile-title">Bilance</div>
-        <div id="energyBalance" class="tile-value">0 W</div>
-      </div>
-      <div class="tile">
-        <div class="tile-title">Stav</div>
-        <div id="energyState" class="tile-value">--</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <canvas id="energyTodayChart"></canvas>
-    </div>
-
-    <div class="card small-text" id="energySummary"></div>
-
-    <div class="card">
-      <canvas id="energyWeekChart"></canvas>
-    </div>
-  </section>
-
-</main>
-
-<!-- JS -->
-<script src="./ui.js"></script>
-<script src="./simulator.js"></script>
+  <!-- LOGIKA -->
+  <script src="ui.js"></script>
+  <script src="simulator.js"></script>
 
 </body>
 </html>

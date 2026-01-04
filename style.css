@@ -1,14 +1,127 @@
-.progress {
-  height: 6px;
-  background: rgba(255,255,255,0.08);
-  border-radius: 4px;
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  background: radial-gradient(circle at top, #0f172a, #020617);
+  color: #e5e7eb;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 1100px;
+  margin: auto;
+  padding: 20px;
+}
+
+/* HLAVIČKA */
+.header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.header h1 {
+  font-size: 26px;
+}
+
+.subtitle {
+  opacity: 0.7;
+  font-size: 14px;
+}
+
+/* META */
+.sim-meta {
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.sim-meta div {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+/* PROGRESS */
+.progress-wrapper {
+  width: 100%;
+  height: 8px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 6px;
   overflow: hidden;
+  margin-top: 8px;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+  transition: width 0.4s ease;
+}
+
+/* STATUS */
+.status {
+  background: rgba(255,255,255,0.04);
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+#status-message {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+#status-mode {
+  opacity: 0.7;
+  font-size: 13px;
+}
+
+/* KARTY */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.card {
+  background: rgba(255,255,255,0.05);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.card h3 {
+  font-size: 15px;
+  opacity: 0.85;
+  margin-bottom: 8px;
+}
+
+.value {
+  font-size: 26px;
+  font-weight: bold;
+}
+
+/* DETAILY */
+.details {
+  background: rgba(255,255,255,0.05);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.details h3 {
   margin-bottom: 10px;
 }
 
-#dayProgress {
-  height: 100%;
-  width: 0%;
-  background: linear-gradient(90deg, #22c55e, #3b82f6);
-  transition: width 0.4s;
+.details ul {
+  list-style: none;
+}
+
+.details li {
+  font-size: 14px;
+  opacity: 0.85;
+  margin-bottom: 4px;
 }
