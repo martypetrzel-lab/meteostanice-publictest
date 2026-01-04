@@ -1,52 +1,53 @@
 const API = "https://meteostanice-simulator-node-production.up.railway.app/state";
-
-/* ===== SAFE HELPERS ===== */
-const el = id => document.getElementById(id);
-
-const setText = (id, value) => {
-  const e = el(id);
-  if (e) e.innerText = value;
-};
-
-const setHtml = (id, value) => {
-  const e = el(id);
-  if (e) e.innerHTML = value;
-};
+const $ = id => document.getElementById(id);
 
 /* ===== ZÁLOŽKY ===== */
 const views = {
-  today: el("view-today"),
-  history: el("view-history"),
-  energy: el("view-energy")
+  today: $("view-today"),
+  history: $("view-history"),
+  energy: $("view-energy")
 };
 
 function show(view, btn) {
-  Object.values(views).forEach(v => v && v.classList.remove("active"));
+  Object.values(views).forEach(v => v.classList.remove("active"));
   document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
-  if (views[view]) views[view].classList.add("active");
-  if (btn) btn.classList.add("active");
+  views[view].classList.add("active");
+  btn.classList.add("active");
 }
 
-el("btnToday")?.addEventListener("click", () => show("today", el("btnToday")));
-el("btnHistory")?.addEventListener("click", () => show("history", el("btnHistory")));
-el("btnEnergy")?.addEventListener("click", () => show("energy", el("btnEnergy")));
+$("btnToday").onclick   = () => show("today", $("btnToday"));
+$("btnHistory").onclick = () => show("history", $("btnHistory"));
+$("btnEnergy").onclick  = () => show("energy", $("btnEnergy"));
 
 /* ===== GRAFY ===== */
-const todayChart = new Chart(el("todayChart"), {
+
+// DNES – teplota
+const todayChart = new Chart($("todayChart"), {
   type: "line",
+  data: { labels: [], datasets: [{
+    label: "Teplota (°C)",
+    data: [],
+    borderColor: "#3b82f6",
+    tension: 0.3
+  }]},
+  options: { animation: false }
+});
+
+// HISTORIE – týden min/max
+const historyChart = new Chart($("historyChart"), {
+  type: "bar",
   data: {
     labels: [],
-    datasets: [{
-      label: "Teplota (°C)",
-      data: [],
-      borderColor: "#3b82f6",
-      tension: 0.3
-    }]
+    datasets: [
+      { label: "Minimum (°C)", data: [], backgroundColor: "#3b82f6" },
+      { label: "Maximum (°C)", data: [], backgroundColor: "#ef4444" }
+    ]
   },
   options: { animation: false }
 });
 
-const energyTodayChart = new Chart(el("energyTodayChart"), {
+// ENERGIE – dnes
+const energyTodayChart = new Chart($("energyTodayChart"), {
   type: "line",
   data: {
     labels: [],
@@ -58,48 +59,75 @@ const energyTodayChart = new Chart(el("energyTodayChart"), {
   options: { animation: false }
 });
 
-/* ===== LOAD STATE ===== */
+// ENERGIE – týdenní bilance
+const energyWeekChart = new Chart($("energyWeekChart"), {
+  type: "bar",
+  data: {
+    labels: [],
+    datasets: [{
+      label: "Denní bilance (Wh)",
+      data: [],
+      backgroundColor: "#60a5fa"
+    }]
+  },
+  options: { animation: false }
+});
+
+/* ===== NAČTENÍ STAVU ===== */
+
 async function loadState() {
   try {
     const res = await fetch(API);
     const s = await res.json();
 
-    /* === HLAVNÍ DATA === */
-    setText("time", new Date(s.time.now).toLocaleTimeString("cs-CZ"));
-    setText("mode", s.mode);
+    /* ===== HLAVIČKA ===== */
+    $("timeNow").innerText = new Date(s.time.now).toLocaleTimeString("cs-CZ");
+    $("mode").innerText = s.mode;
 
-    setText("temp", s.sensors.temperature.toFixed(1));
-    setText("battery", s.battery.voltage.toFixed(2));
-    setText("light", Math.round(s.sensors.light));
-    setText("fan", s.fan ? "ON" : "OFF");
+    /* ===== DNES – hodnoty ===== */
+    $("temp").innerText    = s.sensors.temperature.toFixed(1);
+    $("battery").innerText = s.battery.voltage.toFixed(2);
+    $("light").innerText   = Math.round(s.sensors.light);
+    $("fan").innerText     = s.fan ? "ON" : "OFF";
 
-    /* === TEPLOTA DNES === */
-    const t = s.memory?.today?.temperature ?? [];
-    todayChart.data.labels = t.map(x => new Date(x.t).toLocaleTimeString("cs-CZ"));
-    todayChart.data.datasets[0].data = t.map(x => x.v);
+    /* ===== DNES – graf ===== */
+    const t = s.memory.today.temperature || [];
+    todayChart.data.labels = t.map(p => new Date(p.t).toLocaleTimeString("cs-CZ").slice(0,5));
+    todayChart.data.datasets[0].data = t.map(p => p.v);
     todayChart.update();
 
-    /* === ENERGIE === */
-    setText("energyIn", s.power.solarInW.toFixed(2));
-    setText("energyOut", s.power.loadW.toFixed(2));
-    setText("energyBalance", s.power.balanceWh.toFixed(3));
+    /* ===== HISTORIE – TÝDEN ===== */
+    const h = s.memory.history || [];
+    historyChart.data.labels = h.map(d => d.day);
+    historyChart.data.datasets[0].data = h.map(d => d.min);
+    historyChart.data.datasets[1].data = h.map(d => d.max);
+    historyChart.update();
 
-    const ei = s.memory?.today?.energyIn ?? [];
-    const eo = s.memory?.today?.energyOut ?? [];
+    /* ===== ENERGIE – hodnoty ===== */
+    $("energyIn").innerText  = s.power.solarInW.toFixed(2);
+    $("energyOut").innerText = s.power.loadW.toFixed(2);
+    $("energyBalance").innerText = s.power.balanceWh.toFixed(3);
 
-    energyTodayChart.data.labels = ei.map(x => new Date(x.t).toLocaleTimeString("cs-CZ"));
-    energyTodayChart.data.datasets[0].data = ei.map(x => x.v);
-    energyTodayChart.data.datasets[1].data = eo.map(x => x.v);
+    /* ===== ENERGIE – DNES ===== */
+    const ei = s.memory.today.energyIn || [];
+    const eo = s.memory.today.energyOut || [];
+
+    energyTodayChart.data.labels = ei.map(p => new Date(p.t).toLocaleTimeString("cs-CZ").slice(0,5));
+    energyTodayChart.data.datasets[0].data = ei.map(p => p.v);
+    energyTodayChart.data.datasets[1].data = eo.map(p => p.v);
     energyTodayChart.update();
 
-    const loading = el("loading");
-    if (loading) loading.style.display = "none";
+    /* ===== ENERGIE – TÝDEN ===== */
+    const ed = s.memory.energyDays || [];
+    energyWeekChart.data.labels = ed.map(d => d.day);
+    energyWeekChart.data.datasets[0].data = ed.map(d => d.balance);
+    energyWeekChart.update();
 
-  } catch (err) {
-    console.error("Chyba načtení stavu:", err);
+  } catch (e) {
+    console.error("Chyba načtení stavu", e);
   }
 }
 
 /* ===== START ===== */
 loadState();
-setInterval(loadState, 5000);
+setInterval(loadState, 1000);
