@@ -1,82 +1,100 @@
 # 🌦️ Meteostanice – public test (simulátor)
 
-Tento repozitář obsahuje **veřejný test chytré meteostanice**, která není postavená jen na sběru dat, ale na **rozhodování, plánování a práci s energií**.
+Tento repozitář obsahuje **veřejný test chytré meteostanice**, která není postavená jen na sběru dat, ale hlavně na **rozhodování, plánování a práci s energií**.
 
-Aktuálně projekt běží **v plně funkčním simulátoru**, který se chová stejně, jako se bude chovat budoucí fyzické zařízení.
+Projekt aktuálně běží v **plně funkčním simulátoru**, který se chová stejně, jako se bude chovat budoucí **reálné fyzické zařízení** postavené na ESP32.
 
-👉 **Live 24/7 simulace světa a podmínek + náhodné eventy (public test):**  
+👉 **Live demo (public test):**  
 https://martypetrzel-lab.github.io/meteostanice-publictest/
 
 ---
 
-## 🧠 Co je cílem projektu?
+## 🧠 O co v projektu jde?
 
-Vytvořit meteostanici, která:
+Cílem je vytvořit meteostanici, která:
 
-- ❌ není závislá na cloudu
-- ❌ není „hloupý teploměr“
+- ❌ není závislá na cloudu ani internetu
+- ❌ není jen „hloupý teploměr s grafem“
 - ✅ rozumí času (den / noc)
 - ✅ hlídá si vlastní energii
 - ✅ umí se chovat úsporně
-- ✅ rozhoduje se sama podle podmínek
+- ✅ dokáže se sama rozhodovat podle podmínek
+
+Jednoduše řečeno:  
+**zařízení, které se dokáže o sebe postarat samo.**
 
 ---
 
-## 🔬 Proč simulátor?
+## 🧪 Proč simulátor?
 
-Než vznikne hardware, běží celý projekt v simulátoru, který:
+Než vznikne hardware, běží celý projekt v simulátoru, který umožňuje bezpečně testovat chování systému v čase.
 
-- běží v **reálném čase**
-- simuluje **denní cyklus (světlo, teplota)**
-- počítá **solární příjem a spotřebu**
-- ukládá stav (refresh webu ≠ restart dne)
-- umožňuje ladit chování bez rizika HW
+Simulátor:
 
-Simulátor se chová stejně, jako bude chovat:
-➡️ **ESP32 + solární napájení**
+- běží v **reálném čase** (1 s = 1 s)
+- simuluje **denní cyklus** (světlo, teplota)
+- počítá **solární příjem i spotřebu**
+- ukládá stav (refresh stránky ≠ restart dne)
+- umožňuje ladit logiku bez rizika poškození HW
+
+Simulace se chová stejně, jako se bude chovat:
+➡️ **ESP32 + baterie + solární panel**
 
 ---
 
 ## ⚙️ Architektura projektu
 
+Projekt je rozdělený do logických částí:
+
 - `world.js` – simulace prostředí (čas, světlo, teplota)
-- `device.js` – virtuální hardware (baterie, spotřeba, solár)
+- `device.js` – virtuální hardware (baterie, spotřeba, solární příjem)
 - `brain.js` – logika rozhodování (režimy, větrák, chování)
 - `memory.js` – paměť a historická data
-- `simulator.js` – propojení všeho + persistence stavu
+- `simulator.js` – propojení systému + persistence stavu
 - `ui.js` – vizualizace, grafy, přehledy
 - `index.html / style.css` – UI inspirované Home Assistantem
 
+Cílem je mít **jasně oddělené vrstvy**, které půjde později snadno přenést do reálného zařízení.
+
 ---
 
-## 🔋 Energie & chování
+## 🔋 Energie & chování zařízení
 
 Stanice pracuje s těmito principy:
 
-- solární příjem (dle světla)
+- solární příjem (dle intenzity světla)
 - spotřeba zařízení
-- výpočet bilance (W / Wh)
-- přepínání režimů:
+- výpočet energetické bilance (W / Wh)
+- přepínání provozních režimů:
   - `NORMAL`
   - `SAVE`
   - `CRITICAL`
 
-Na základě toho upravuje:
+Na základě těchto stavů zařízení dynamicky upravuje:
 - chování větráku
-- spotřebu
+- vlastní spotřebu
 - hlavní stavovou hlášku
+- celkové chování systému
+
+Cílem není maximální výkon, ale **dlouhodobé přežití a stabilita**.
 
 ---
 
-## 📡 Budoucí verze
+## 📡 Směr do budoucna
 
-Plánovaný vývoj:
+Plánovaný vývoj projektu:
 
 - ✅ ESP32 jako hlavní řídicí jednotka
 - 🔜 reálné senzory (teplota, světlo, napětí)
-- 🔜 **LoRa komunikace** (řádově desítky kilometrů)
+- 🔜 **LoRa komunikace** (řádově desítky kilometrů, bez internetu)
 - 🔜 více uzlů → síť meteostanic
-- 🔜 varování a události (např. extrémní podmínky)
+- 🔜 sdílení stavu mezi uzly
+- 🔜 varování a události (extrémní podmínky, nízká energie)
+
+Dlouhodobou vizí je **síť soběstačných zařízení**, která:
+- se hlídají navzájem
+- fungují mimo infrastrukturu
+- a dokážou si vyměňovat základní informace i v krizových situacích
 
 ---
 
@@ -85,23 +103,24 @@ Plánovaný vývoj:
 - 🔧 **Public test**
 - 🧠 Logika ve vývoji
 - 🧪 Simulace běží nonstop
-- 🚧 UI a data se ladí za provozu
+- 🚧 UI i data se ladí za provozu
 
-Projekt je otevřený k nahlédnutí – cílem je ukázat **celý proces vzniku**, ne jen hotový výsledek.
-
----
-
-## 👀 Pro koho je projekt?
-
-- bastlíři
-- IT / embedded nadšenci
-- lidi, co řeší energii
-- všichni, koho baví „chytrá zařízení, co dávají smysl“
+Projekt je otevřený záměrně – cílem je ukázat **celý proces vzniku**, včetně chyb, úprav a postupného zlepšování.
 
 ---
 
-## 📬 Kontakt / autor
+## 👀 Pro koho je projekt určený?
 
-Autor: **Martin Petržel**  
+- bastlíře
+- IT / embedded nadšence
+- lidi, kteří řeší energii a soběstačnost
+- všechny, koho baví **chytrá zařízení, která dávají smysl**
+
+---
+
+## 📬 Autor
+
+**Martin Petržel**  
 Projekt vzniká jako osobní vývojový a testovací projekt.
 
+Nejde o hotový produkt, ale o **cestu k funkčnímu a reálnému zařízení**.
