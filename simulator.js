@@ -1,66 +1,32 @@
-import World from "./world.js";
-import Device from "./device.js";
-import Memory from "./memory.js";
-import Brain from "./brain.js";
+// simulator.js – frontend listener (BEZE ZMĚN LOGIKY, jen čas + progress)
 
-const STORAGE_KEY = "meteostation_sim_state_v2";
+window.addEventListener("simulator:update", (e) => {
+  const d = e.detail;
+  const now = new Date(d.time.now);
 
-let simStart = null;
+  /* ===== HLAVIČKA ===== */
+  document.getElementById("message").textContent = d.message;
+  document.getElementById("time").textContent = now.toLocaleTimeString("cs-CZ");
+  document.getElementById("mode").textContent = d.mode;
 
-const Simulator = {
-  init() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const s = JSON.parse(saved);
-      World.state = s.world;
-      Device.state = s.device;
-      Memory.state = s.memory;
-      Brain.internal = s.brain;
-      simStart = s.simStart;
-    } else {
-      World.init();
-      Device.init();
-      simStart = Date.now();
-    }
+  /* ===== DEN SIMULACE ===== */
+  const start = d.time.start;        // timestamp startu simulace (ze serveru)
+  const day = Math.floor((d.time.now - start) / (1000 * 60 * 60 * 24)) + 1;
+  document.getElementById("day").textContent = `Den ${day} / 21`;
 
-    setInterval(() => this.tick(), 1000);
-  },
+  const progress = Math.min(100, (day / 21) * 100);
+  document.getElementById("dayProgress").style.width = progress + "%";
 
-  tick() {
-    const world = World.tick();
-    const deviceBefore = Device.getState();
+  /* ===== TILES ===== */
+  document.getElementById("temp").textContent =
+    d.sensors.temperature.toFixed(1) + " °C";
+  document.getElementById("battery").textContent =
+    d.battery.voltage.toFixed(2) + " V";
+  document.getElementById("light").textContent =
+    Math.round(d.environment.light) + " lx";
+  document.getElementById("fan").textContent =
+    d.fan ? `zapnut (${d.fanPower}%)` : "vypnut";
 
-    const brain = Brain.evaluate({
-      time: world.time,
-      env: world.environment,
-      battery: deviceBefore.battery,
-      power: deviceBefore.power
-    });
-
-    const device = Device.tick(world, brain);
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      world: World.state,
-      device: Device.state,
-      memory: Memory.state,
-      brain: Brain.internal,
-      simStart
-    }));
-
-    window.dispatchEvent(new CustomEvent("simulator:update", {
-      detail: {
-        time: { ...world.time, start: simStart },
-        environment: world.environment,
-        sensors: device.sensors,
-        battery: device.battery,
-        power: device.power,
-        fan: brain.fan,
-        mode: brain.mode,
-        message: brain.mainMessage,
-        details: brain.details
-      }
-    }));
-  }
-};
-
-window.addEventListener("DOMContentLoaded", () => Simulator.init());
+  document.getElementById("details").textContent =
+    d.details.join(" · ");
+});

@@ -6,6 +6,7 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
 
 <header>
@@ -16,25 +17,22 @@
 
 <main>
 
+  <div class="card message">
+    <h2 id="message">Načítám…</h2>
+  </div>
+
   <div class="card status">
-    <div>
-      Čas: <strong id="time">--:--:--</strong><br>
-      Den <strong id="day">--</strong> / 21
-    </div>
-    <div id="mode">--</div>
+    <div>Čas: <strong id="time">--:--:--</strong></div>
+    <div id="day">Den -- / 21</div>
+    <div>Režim: <strong id="mode">--</strong></div>
   </div>
 
-  <div class="card">
-    <div class="progress-wrap">
-      <div id="progress" class="progress-bar"></div>
-    </div>
+  <div class="progress">
+    <div id="dayProgress"></div>
   </div>
 
-  <div id="view-today" class="view active">
-    <div class="card message">
-      <h2 id="message">Načítám data…</h2>
-    </div>
-
+  <!-- DNES -->
+  <section id="view-today" class="view active">
     <div class="tiles">
       <div class="tile"><div class="tile-title">Teplota</div><div id="temp" class="tile-value">-- °C</div></div>
       <div class="tile"><div class="tile-title">Baterie</div><div id="battery" class="tile-value">-- V</div></div>
@@ -47,35 +45,28 @@
     </div>
 
     <div class="card small-text" id="details"></div>
-  </div>
+  </section>
 
-  <div id="view-history" class="view">
+  <!-- HISTORIE -->
+  <section id="view-history" class="view">
     <div class="card">
       <canvas id="historyChart"></canvas>
     </div>
-  </div>
+  </section>
 
-  <div id="view-energy" class="view">
-    <div class="tiles">
-      <div class="tile"><div class="tile-title">Příjem</div><div id="energyIn" class="tile-value">0 W</div></div>
-      <div class="tile"><div class="tile-title">Výdej</div><div id="energyOut" class="tile-value">0 W</div></div>
-      <div class="tile"><div class="tile-title">Bilance</div><div id="energyBalance" class="tile-value">0 W</div></div>
-      <div class="tile"><div class="tile-title">Stav</div><div id="energyState" class="tile-value">--</div></div>
-    </div>
-
+  <!-- ENERGIE -->
+  <section id="view-energy" class="view">
     <div class="card">
       <canvas id="energyTodayChart"></canvas>
     </div>
-
     <div class="card">
       <canvas id="energyWeekChart"></canvas>
-      <div id="energySummary" class="small-text"></div>
     </div>
-  </div>
+  </section>
 
 </main>
 
 <script src="ui.js"></script>
-<script type="module" src="simulator.js"></script>
+<script src="simulator.js"></script>
 </body>
 </html>
