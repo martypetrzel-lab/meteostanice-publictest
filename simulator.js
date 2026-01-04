@@ -1,78 +1,128 @@
-// simulator.js – frontend napojený na Railway backend
+import World from "./world.js";
+import Device from "./device.js";
+import Memory from "./memory.js";
+import Brain from "./brain.js";
 
-const API_URL = "https://meteostanice-simulator-node-production.up.railway.app/state";
+const STORAGE_KEY = "meteostation_sim_state_v1";
 
-// globální stav
-window.STATE = null;
-
-// ===== HELPERY =====
-function formatTime(ts) {
-  const d = new Date(ts);
-  return d.toLocaleTimeString("cs-CZ");
+function hasResetParam() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("reset") === "1";
 }
 
-function clamp(v, min, max) {
-  return Math.min(Math.max(v, min), max);
-}
+let lastClosedDay = null;
 
-// ===== UI UPDATE =====
-function updateMetaUI(state) {
-  // reálný čas
-  const timeEl = document.getElementById("real-time");
-  if (timeEl) {
-    timeEl.textContent = `Čas: ${formatTime(state.time.now)}`;
-  }
+const Simulator = {
 
-  // den simulace
-  const start = state.simulation?.startTime;
-  const now = state.time.now;
+  init() {
+    const forceReset = hasResetParam();
 
-  if (start) {
-    const dayIndex = Math.floor((now - start) / (24 * 60 * 60 * 1000)) + 1;
-    const day = clamp(dayIndex, 1, 21);
-
-    const dayEl = document.getElementById("sim-day");
-    if (dayEl) {
-      dayEl.textContent = `Den ${day} / 21`;
+    if (forceReset) {
+      console.warn("⚠️ Reset simulace vyžádán URL parametrem");
+      localStorage.removeItem(STORAGE_KEY);
     }
 
-    const progress = (day / 21) * 100;
-    const bar = document.getElementById("sim-progress");
-    if (bar) {
-      bar.style.width = `${progress}%`;
-    }
-  }
-}
+    const saved = localStorage.getItem(STORAGE_KEY);
 
-// ===== HLAVNÍ NAČTENÍ DAT =====
-async function loadState() {
-  try {
-    const res = await fetch(API_URL, {
-      cache: "no-store"
+    if (saved) {
+      try {
+        const s = JSON.parse(saved);
+
+        if (s.world) World.state = s.world;
+        else World.init();
+
+        if (s.device) Device.state = s.device;
+        else Device.init();
+
+        if (s.memory) Memory.state = s.memory;
+        if (s.brainInternal) Brain.internal = s.brainInternal;
+
+        lastClosedDay = s.lastClosedDay ?? null;
+
+      } catch (e) {
+        console.error("❌ Obnova stavu selhala, startuji čistý běh", e);
+        World.init();
+        Device.init();
+        Memory.state = undefined;
+        Brain.internal = { lastTemp: null, tempTrend: 0 };
+        lastClosedDay = null;
+      }
+    } else {
+      World.init();
+      Device.init();
+    }
+
+    setInterval(() => this.tick(), 1000);
+  },
+
+  tick() {
+    const world = World.tick();
+    const now = new Date(world.time.now);
+
+    const deviceBefore = Device.getState();
+
+    /* ===== PAMĚŤ (SBĚR DAT) ===== */
+    Memory.update({
+      temperature: deviceBefore.sensors.temperature,
+      energyInW: deviceBefore.power.solarInW,
+      energyOutW: deviceBefore.power.loadW
     });
 
-    if (!res.ok) {
-      throw new Error("Backend nedostupný");
+    /* ===== UZAVŘENÍ DNE (SIMULOVANÝ ČAS) ===== */
+    const dayKey = now.toDateString();
+
+    if (
+      now.getHours() === 23 &&
+      now.getMinutes() === 59 &&
+      lastClosedDay !== dayKey
+    ) {
+      Memory.closeDay(now);
+      lastClosedDay = dayKey;
     }
 
-    const state = await res.json();
-    window.STATE = state;
+    const brain = Brain.evaluate({
+      time: world.time,
+      env: world.environment,
+      battery: deviceBefore.battery,
+      power: deviceBefore.power
+    });
 
-    // předání do UI
-    if (typeof updateUI === "function") {
-      updateUI(state);
-    }
+    const device = Device.tick(world, brain);
+    
+    Simulator.lastState = {
+  time: world.time,
+  environment: world.environment,
+  sensors: device.sensors,
+  battery: device.battery,
+  power: device.power,
+  mode: brain.mode,
+  message: brain.mainMessage,
+  details: brain.details
+};
 
-    updateMetaUI(state);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      world: World.state,
+      device: Device.state,
+      memory: Memory.state,
+      brainInternal: Brain.internal,
+      lastClosedDay
+    }));
 
-    // debug
-    console.log("STATE:", state);
-
-  } catch (err) {
-    console.error("Chyba spojení s backendem:", err);
+    window.dispatchEvent(new CustomEvent("simulator:update", {
+      detail: {
+        time: world.time,
+        environment: world.environment,
+        sensors: device.sensors,
+        battery: device.battery,
+        power: device.power,
+        fan: brain.fan,
+        fanPower: brain.fanPower,
+        mode: brain.mode,
+        message: brain.mainMessage,
+        details: brain.details
+      }
+    }));
   }
-}
+};
 
-// ===== START =====
-loadState();
-setInterval(loadState, 1000);
+window.addEventListener("DOMContentLoaded", () => Simulator.init());
