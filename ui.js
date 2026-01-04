@@ -34,6 +34,18 @@ const todayChart = new Chart($("todayChart"), {
   options: { animation: false }
 });
 
+const historyChart = new Chart($("historyChart"), {
+  type: "bar",
+  data: {
+    labels: [],
+    datasets: [
+      { label: "Minimum (°C)", data: [], backgroundColor: "#60a5fa" },
+      { label: "Maximum (°C)", data: [], backgroundColor: "#ef4444" }
+    ]
+  },
+  options: { animation: false }
+});
+
 const energyTodayChart = new Chart($("energyTodayChart"), {
   type: "line",
   data: {
@@ -46,13 +58,16 @@ const energyTodayChart = new Chart($("energyTodayChart"), {
   options: { animation: false }
 });
 
-/* ===== POMOCNÉ ===== */
-function hoursToText(h) {
-  if (!isFinite(h) || h <= 0) return "--";
-  const hh = Math.floor(h);
-  const mm = Math.floor((h - hh) * 60);
-  return `${hh} h ${mm} min`;
-}
+const energyWeekChart = new Chart($("energyWeekChart"), {
+  type: "bar",
+  data: {
+    labels: [],
+    datasets: [
+      { label: "Denní bilance (Wh)", data: [], backgroundColor: "#3b82f6" }
+    ]
+  },
+  options: { animation: false }
+});
 
 /* ===== LOAD STATE ===== */
 async function loadState() {
@@ -60,59 +75,30 @@ async function loadState() {
     const res = await fetch(API);
     const s = await res.json();
 
-    /* ===== HLAVIČKA ===== */
+    /* --- HLAVIČKA --- */
     $("time").innerText = new Date(s.time.now).toLocaleTimeString("cs-CZ");
     $("mode").innerText = s.mode;
     $("headline").innerText = s.message ?? "";
 
-    /* ===== DEN xx / 21 + PROGRESS ===== */
-    const now = new Date(s.time.now);
-    const start = new Date(now); start.setHours(0, 0, 0, 0);
-    const end = new Date(now); end.setHours(24, 0, 0, 0);
-    const progress = ((now - start) / (end - start)) * 100;
-
-    $("dayLabel").innerText = `${Math.floor(progress / 100 * 21) + 1} / 21`;
-    $("dayProgress").style.width = `${progress.toFixed(1)}%`;
-
-    /* ===== DNES DATA ===== */
+    /* --- DNES DATA --- */
     $("temp").innerText = s.sensors.temperature.toFixed(1);
     $("battery").innerText = s.battery.voltage.toFixed(2);
     $("light").innerText = Math.round(s.sensors.light);
     $("fan").innerText = s.fan ? "ON" : "OFF";
 
-    /* ===== GRAF TEPLOTA ===== */
+    /* --- ENERGIE STAT --- */
+    $("energyIn").innerText = s.power.solarInW.toFixed(2);
+    $("energyOut").innerText = s.power.loadW.toFixed(2);
+    $("energyBalance").innerText = s.power.balanceWh.toFixed(3);
+    $("energyState").innerText = Math.round(s.battery.soc * 100) + " %";
+
+    /* --- DNES GRAF TEPLOTA --- */
     const t = s.memory.today.temperature;
     todayChart.data.labels = t.map(x => new Date(x.t).toLocaleTimeString("cs-CZ"));
     todayChart.data.datasets[0].data = t.map(x => x.v);
     todayChart.update();
 
-    /* ===== ENERGIE STAT ===== */
-    const inW = s.power.solarInW;
-    const outW = s.power.loadW;
-    const netW = inW - outW;
-
-    $("energyIn").innerText = inW.toFixed(2);
-    $("energyOut").innerText = outW.toFixed(2);
-    $("energyBalance").innerText = s.power.balanceWh.toFixed(3);
-
-    const CAPACITY_WH = 12;
-    const soc = s.battery.soc;
-    const storedWh = soc * CAPACITY_WH;
-
-    let stateText = "--";
-
-    if (Math.abs(netW) < 0.01) {
-      stateText = "Stabilní";
-    } else if (netW > 0) {
-      const missing = CAPACITY_WH - storedWh;
-      stateText = `Nabíjí se (${hoursToText(missing / netW)})`;
-    } else {
-      stateText = `Vybíjí se (${hoursToText(storedWh / Math.abs(netW))})`;
-    }
-
-    $("energyState").innerText = stateText;
-
-    /* ===== ENERGIE DNES GRAF ===== */
+    /* --- ENERGIE DNES --- */
     const ei = s.memory.today.energyIn;
     const eo = s.memory.today.energyOut;
     energyTodayChart.data.labels = ei.map(x => new Date(x.t).toLocaleTimeString("cs-CZ"));
@@ -120,8 +106,18 @@ async function loadState() {
     energyTodayChart.data.datasets[1].data = eo.map(x => x.v);
     energyTodayChart.update();
 
-    $("loading").style.display = "none";
+    /* --- HISTORIE TEPLOT --- */
+    historyChart.data.labels = s.memory.history.map(d => d.day);
+    historyChart.data.datasets[0].data = s.memory.history.map(d => d.min);
+    historyChart.data.datasets[1].data = s.memory.history.map(d => d.max);
+    historyChart.update();
 
+    /* --- TÝDEN ENERGIE --- */
+    energyWeekChart.data.labels = s.memory.energyDays.map(d => d.day);
+    energyWeekChart.data.datasets[0].data = s.memory.energyDays.map(d => d.balance);
+    energyWeekChart.update();
+
+    $("loading").style.display = "none";
   } catch (e) {
     console.error("Chyba načtení stavu", e);
   }
