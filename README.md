@@ -4,7 +4,7 @@ Tento repozitář obsahuje **veřejný test chytré meteostanice**, která není
 
 Aktuálně projekt běží **v plně funkčním simulátoru**, který se chová stejně, jako se bude chovat budoucí fyzické zařízení.
 
-👉 **Live demo (public test):**  
+👉 **Live 24/7 simulace světa a podmínek + náhodné eventy (public test):**  
 https://martypetrzel-lab.github.io/meteostanice-publictest/
 
 ---
