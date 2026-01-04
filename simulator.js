@@ -1,16 +1,39 @@
-window.addEventListener("simulator:update", (e) => {
-  const d = e.detail;
-  const now = new Date(d.time.now);
+// simulator.js – frontend napojený na Railway backend
 
-  document.getElementById("time").textContent =
-    now.toLocaleTimeString("cs-CZ");
+const API_URL = "https://meteostanice-simulator-node-production.up.railway.app/state";
 
-  const start = d.time.start;
-  const day = Math.floor((d.time.now - start) / 86400000) + 1;
+// globální stav
+window.STATE = null;
 
-  document.getElementById("day").textContent =
-    `Den ${day} / 21`;
+// hlavní načtení dat
+async function loadState() {
+  try {
+    const res = await fetch(API_URL, {
+      cache: "no-store"
+    });
 
-  document.getElementById("dayProgress").style.width =
-    Math.min(100, (day / 21) * 100) + "%";
-});
+    if (!res.ok) {
+      throw new Error("Backend nedostupný");
+    }
+
+    const state = await res.json();
+    window.STATE = state;
+
+    // předání dat UI
+    if (typeof updateUI === "function") {
+      updateUI(state);
+    }
+
+    // debug
+    console.log("STATE:", state);
+
+  } catch (err) {
+    console.error("Chyba spojení s backendem:", err);
+  }
+}
+
+// první načtení
+loadState();
+
+// živá aktualizace – 1s = 1s simulace
+setInterval(loadState, 1000);
