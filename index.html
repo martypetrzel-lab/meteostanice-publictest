@@ -1,10 +1,9 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8" />
-  <title>Meteostanice – public test</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <title>Meteostanice – Public Test</title>
+  <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -20,45 +19,48 @@
   <div class="card status">
     <div>
       Čas: <strong id="time">--:--:--</strong><br>
-      Den <strong id="dayIndex">--</strong> / 21
+      Den <strong id="day">--</strong> / 21
     </div>
-    <div style="flex:1;align-self:center">
-      <div class="progress">
-        <div id="dayProgress"></div>
-      </div>
+    <div id="mode">--</div>
+  </div>
+
+  <div class="card">
+    <div class="progress-wrap">
+      <div id="progress" class="progress-bar"></div>
     </div>
   </div>
 
-  <section id="view-today" class="view active">
+  <div id="view-today" class="view active">
     <div class="card message">
-      <h2 id="message">---</h2>
-      <div class="small-text" id="details"></div>
+      <h2 id="message">Načítám data…</h2>
     </div>
 
     <div class="tiles">
-      <div class="tile"><div class="tile-title">Teplota</div><div class="tile-value" id="temp">--</div></div>
-      <div class="tile"><div class="tile-title">Baterie</div><div class="tile-value" id="battery">--</div></div>
-      <div class="tile"><div class="tile-title">Světlo</div><div class="tile-value" id="light">--</div></div>
-      <div class="tile"><div class="tile-title">Ventilátor</div><div class="tile-value" id="fan">--</div></div>
+      <div class="tile"><div class="tile-title">Teplota</div><div id="temp" class="tile-value">-- °C</div></div>
+      <div class="tile"><div class="tile-title">Baterie</div><div id="battery" class="tile-value">-- V</div></div>
+      <div class="tile"><div class="tile-title">Světlo</div><div id="light" class="tile-value">-- lx</div></div>
+      <div class="tile"><div class="tile-title">Větrák</div><div id="fan" class="tile-value">--</div></div>
     </div>
 
     <div class="card">
       <canvas id="todayChart"></canvas>
     </div>
-  </section>
 
-  <section id="view-history" class="view">
+    <div class="card small-text" id="details"></div>
+  </div>
+
+  <div id="view-history" class="view">
     <div class="card">
       <canvas id="historyChart"></canvas>
     </div>
-  </section>
+  </div>
 
-  <section id="view-energy" class="view">
+  <div id="view-energy" class="view">
     <div class="tiles">
-      <div class="tile"><div class="tile-title">Příjem</div><div class="tile-value" id="energyIn">--</div></div>
-      <div class="tile"><div class="tile-title">Výdej</div><div class="tile-value" id="energyOut">--</div></div>
-      <div class="tile"><div class="tile-title">Bilance</div><div class="tile-value" id="energyBalance">--</div></div>
-      <div class="tile"><div class="tile-title">Stav</div><div class="tile-value" id="energyState">--</div></div>
+      <div class="tile"><div class="tile-title">Příjem</div><div id="energyIn" class="tile-value">0 W</div></div>
+      <div class="tile"><div class="tile-title">Výdej</div><div id="energyOut" class="tile-value">0 W</div></div>
+      <div class="tile"><div class="tile-title">Bilance</div><div id="energyBalance" class="tile-value">0 W</div></div>
+      <div class="tile"><div class="tile-title">Stav</div><div id="energyState" class="tile-value">--</div></div>
     </div>
 
     <div class="card">
@@ -66,14 +68,14 @@
     </div>
 
     <div class="card">
-      <div id="energySummary">Bilance dnes: 0 Wh</div>
       <canvas id="energyWeekChart"></canvas>
+      <div id="energySummary" class="small-text"></div>
     </div>
-  </section>
+  </div>
 
 </main>
 
 <script src="ui.js"></script>
-<script src="simulator.js"></script>
+<script type="module" src="simulator.js"></script>
 </body>
 </html>
