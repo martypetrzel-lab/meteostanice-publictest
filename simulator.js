@@ -4,6 +4,7 @@ import Memory from "./memory.js";
 import Brain from "./brain.js";
 
 const STORAGE_KEY = "meteostation_sim_state_v1";
+const TIME_KEY = "meteostation_time_anchor_v1";
 
 function hasResetParam() {
   const params = new URLSearchParams(window.location.search);
@@ -11,6 +12,7 @@ function hasResetParam() {
 }
 
 let lastClosedDay = null;
+let timeOffset = 0;
 
 const Simulator = {
 
@@ -20,6 +22,16 @@ const Simulator = {
     if (forceReset) {
       console.warn("⚠️ Reset simulace vyžádán URL parametrem");
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(TIME_KEY);
+    }
+
+    // ⏱️ REAL TIME ANCHOR
+    const savedTime = localStorage.getItem(TIME_KEY);
+    if (savedTime) {
+      timeOffset = Number(savedTime);
+    } else {
+      timeOffset = Date.now();
+      localStorage.setItem(TIME_KEY, timeOffset);
     }
 
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -56,19 +68,23 @@ const Simulator = {
   },
 
   tick() {
+    // ⏱️ REÁLNÝ ČAS → SIMULACE
+    const nowReal = Date.now();
+    World.state.time.now = nowReal;
+
     const world = World.tick();
     const now = new Date(world.time.now);
 
     const deviceBefore = Device.getState();
 
-    /* ===== PAMĚŤ (SBĚR DAT) ===== */
+    /* ===== PAMĚŤ ===== */
     Memory.update({
       temperature: deviceBefore.sensors.temperature,
       energyInW: deviceBefore.power.solarInW,
       energyOutW: deviceBefore.power.loadW
     });
 
-    /* ===== UZAVŘENÍ DNE (SIMULOVANÝ ČAS) ===== */
+    /* ===== UZAVŘENÍ DNE ===== */
     const dayKey = now.toDateString();
 
     if (
@@ -88,17 +104,6 @@ const Simulator = {
     });
 
     const device = Device.tick(world, brain);
-    
-    Simulator.lastState = {
-  time: world.time,
-  environment: world.environment,
-  sensors: device.sensors,
-  battery: device.battery,
-  power: device.power,
-  mode: brain.mode,
-  message: brain.mainMessage,
-  details: brain.details
-};
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       world: World.state,
