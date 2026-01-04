@@ -1,3 +1,4 @@
+const API = "https://meteostanice-simulator-node-production.up.railway.app/state";
 const $ = id => document.getElementById(id);
 
 /* ===== ZÁLOŽKY ===== */
@@ -9,10 +10,7 @@ const views = {
 
 function show(view, btn) {
   Object.values(views).forEach(v => v.classList.remove("active"));
-  $("btnToday").classList.remove("active");
-  $("btnHistory").classList.remove("active");
-  $("btnEnergy").classList.remove("active");
-
+  document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
   views[view].classList.add("active");
   btn.classList.add("active");
 }
@@ -24,14 +22,8 @@ $("btnEnergy").onclick = () => show("energy", $("btnEnergy"));
 /* ===== GRAFY ===== */
 const todayChart = new Chart($("todayChart"), {
   type: "line",
-  data: { labels: [], datasets: [{
-    label: "Teplota (°C)",
-    data: [],
-    borderColor: "#3b82f6",
-    tension: 0.35,
-    pointRadius: 2
-  }]},
-  options: { animation: false, plugins: { legend: { display: false } } }
+  data: { labels: [], datasets: [{ data: [], borderColor: "#3b82f6", tension: 0.3 }] },
+  options: { animation: false }
 });
 
 const historyChart = new Chart($("historyChart"), {
@@ -39,8 +31,8 @@ const historyChart = new Chart($("historyChart"), {
   data: {
     labels: [],
     datasets: [
-      { label: "Minimum", data: [], borderColor: "#60a5fa" },
-      { label: "Maximum", data: [], borderColor: "#ef4444" }
+      { label: "Min", data: [], borderColor: "#60a5fa" },
+      { label: "Max", data: [], borderColor: "#ef4444" }
     ]
   },
   options: { animation: false }
@@ -51,8 +43,8 @@ const energyTodayChart = new Chart($("energyTodayChart"), {
   data: {
     labels: [],
     datasets: [
-      { label: "Příjem (W)", data: [], borderColor: "#22c55e" },
-      { label: "Výdej (W)", data: [], borderColor: "#ef4444" }
+      { label: "Příjem", data: [], borderColor: "#22c55e" },
+      { label: "Výdej", data: [], borderColor: "#ef4444" }
     ]
   },
   options: { animation: false }
@@ -60,76 +52,42 @@ const energyTodayChart = new Chart($("energyTodayChart"), {
 
 const energyWeekChart = new Chart($("energyWeekChart"), {
   type: "bar",
-  data: { labels: [], datasets: [{
-    label: "Denní bilance (Wh)",
-    data: [],
-    backgroundColor: "#3b82f6"
-  }]},
+  data: { labels: [], datasets: [{ data: [], backgroundColor: "#3b82f6" }] },
   options: { animation: false }
 });
 
-/* ===== STAV ===== */
-let lastMinute = null;
-let energyTodayWh = 0;
+/* ===== UPDATE ===== */
+async function update() {
+  const r = await fetch(API);
+  const d = await r.json();
 
-/* ===== HLAVNÍ FETCH ZE SERVERU ===== */
-async function fetchState() {
-  try {
-    const res = await fetch(
-      "https://meteostanice-simulator-node-production.up.railway.app/state"
-    );
-    const d = await res.json();
+  const now = new Date(d.time.now);
+  $("time").textContent = now.toLocaleTimeString();
+  $("message").textContent = d.message;
+  $("mode").textContent = d.mode;
+  $("temp").textContent = d.sensors.temperature.toFixed(1) + " °C";
+  $("battery").textContent = d.battery.voltage.toFixed(2) + " V";
 
-    const now = new Date(d.time.now);
-    const label = now.getHours() + ":" + String(now.getMinutes()).padStart(2, "0");
+  /* ===== DNES ===== */
+  todayChart.data.labels = d.memory.today.map(p => p.time);
+  todayChart.data.datasets[0].data = d.memory.today.map(p => p.temp);
+  todayChart.update();
 
-    /* TEXTY */
-    $("message").textContent = d.message;
-    $("time").textContent = now.toLocaleTimeString();
-    $("mode").textContent = d.mode;
-    $("temp").textContent = d.sensors.temperature.toFixed(1) + " °C";
-    $("battery").textContent = d.battery.voltage.toFixed(2) + " V";
-    $("light").textContent = Math.round(d.environment.light) + " lx";
-    $("fan").textContent = d.fan ? `zapnut (${d.fanPower}%)` : "vypnut";
-    $("details").textContent = d.details.join(" · ");
+  /* ===== HISTORIE ===== */
+  historyChart.data.labels = d.memory.days.map(d => d.day);
+  historyChart.data.datasets[0].data = d.memory.days.map(d => d.min);
+  historyChart.data.datasets[1].data = d.memory.days.map(d => d.max);
+  historyChart.update();
 
-    /* ENERGIE */
-    const inW = d.power.solarInW;
-    const outW = d.power.loadW;
-    const balance = inW - outW;
+  /* ===== ENERGIE ===== */
+  energyTodayChart.data.labels = d.memory.today.map(p => p.time);
+  energyTodayChart.data.datasets[0].data = d.memory.today.map(p => p.inW);
+  energyTodayChart.data.datasets[1].data = d.memory.today.map(p => p.outW);
+  energyTodayChart.update();
 
-    $("energyIn").textContent = inW.toFixed(2) + " W";
-    $("energyOut").textContent = outW.toFixed(2) + " W";
-    $("energyBalance").textContent =
-      (balance >= 0 ? "+" : "") + balance.toFixed(2) + " W";
-
-    $("energyState").textContent =
-      balance > 0.05 ? "nabíjí se" :
-      balance < -0.05 ? "vybíjí se" : "stabilní";
-
-    /* GRAFY – 1× ZA MINUTU */
-    if (lastMinute !== now.getMinutes()) {
-      todayChart.data.labels.push(label);
-      todayChart.data.datasets[0].data.push(d.sensors.temperature);
-      todayChart.update();
-
-      energyTodayChart.data.labels.push(label);
-      energyTodayChart.data.datasets[0].data.push(inW);
-      energyTodayChart.data.datasets[1].data.push(outW);
-      energyTodayChart.update();
-
-      energyTodayWh += balance / 60;
-      $("energySummary").textContent =
-        `Bilance dnes: ${energyTodayWh.toFixed(2)} Wh`;
-
-      lastMinute = now.getMinutes();
-    }
-
-  } catch (e) {
-    console.error("❌ Nelze načíst stav ze serveru", e);
-  }
+  energyWeekChart.data.labels = d.memory.energyDays.map(d => d.day);
+  energyWeekChart.data.datasets[0].data = d.memory.energyDays.map(d => d.wh);
+  energyWeekChart.update();
 }
 
-/* ===== CYKLUS ===== */
-setInterval(fetchState, 1000);
-fetchState();
+setInterval(update, 1000);
