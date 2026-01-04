@@ -1,6 +1,6 @@
 .progress {
   height: 6px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.08);
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 10px;
@@ -10,5 +10,5 @@
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, #22c55e, #3b82f6);
-  transition: width 0.3s;
+  transition: width 0.4s;
 }
