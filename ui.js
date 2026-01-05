@@ -71,7 +71,25 @@ const energyWeekChart = new Chart($("energyWeekChart"), {
   options: { animation: false }
 });
 
-/* ================== LIDSKÁ HLÁŠKA ================== */
+/* ================== STRES / EVENT ================== */
+function stressInfo(s) {
+  const stresses = [];
+
+  if (s.events?.active) stresses.push(s.events.active);
+  if (!s.time.isDay) stresses.push("noc");
+  if (s.battery.soc < 0.3) stresses.push("nízká baterie");
+  if (s.power.loadW > s.power.solarInW + 0.5) stresses.push("vysoká spotřeba");
+  if (s.fan) stresses.push("aktivní chlazení");
+
+  return stresses;
+}
+
+function stressMessage(stresses) {
+  if (!stresses.length) return null;
+  return "⚠️ STRESOVÁ SITUACE: " + stresses.join(", ");
+}
+
+/* ================== HLÁŠKY ================== */
 function humanMessage(s) {
   const net = s.power.solarInW - s.power.loadW;
   const soc = s.battery.soc;
@@ -86,37 +104,16 @@ function humanMessage(s) {
   return "✅ Podmínky jsou stabilní.";
 }
 
-/* ================== PROČ ================== */
-function humanReason(s) {
-  const net = s.power.solarInW - s.power.loadW;
-  const reasons = [];
-  reasons.push(s.time.isDay ? "je den" : "je noc");
-  reasons.push(`SOC baterie je ${Math.round(s.battery.soc * 100)} %`);
-  if (net > 0.1) reasons.push("příjem energie je vyšší než spotřeba");
-  else if (net < -0.1) reasons.push("spotřeba je vyšší než příjem");
-  else reasons.push("energetická bilance je vyrovnaná");
-  reasons.push(`sampling ${s.sampling.profile}`);
-  return "Protože " + reasons.join(", ") + ".";
-}
-
-/* ================== PREDIKCE ================== */
-function predictionText(s) {
-  const soc = s.battery.soc;
-  const capacityWh = 12; // modelová kapacita
-  const availableWh = soc * capacityWh;
-  const load = s.power.loadW || 0.1;
-
-  if (!s.time.isDay) {
-    const hours = availableWh / load;
-    if (hours < 4)
-      return "⚠️ Při současné spotřebě hrozí vybití ještě během noci.";
-    return `🌙 Při současné spotřebě baterie vydrží přibližně ${hours.toFixed(1)} h.`;
+function humanReason(s, stresses) {
+  if (stresses.length) {
+    return "Reaguji na stresovou situaci: " + stresses.join(", ") + ".";
   }
 
-  const net = s.power.solarInW - s.power.loadW;
-  if (net > 0)
-    return "☀️ Denní bilance je kladná, stav baterie by se měl zlepšovat.";
-  return "⛅ Denní bilance je nejistá, sleduji další vývoj.";
+  const reasons = [];
+  reasons.push(s.time.isDay ? "je den" : "je noc");
+  reasons.push(`SOC ${Math.round(s.battery.soc * 100)} %`);
+  reasons.push(`sampling ${s.sampling.profile}`);
+  return "Protože " + reasons.join(", ") + ".";
 }
 
 /* ================== DATA ================== */
@@ -127,9 +124,11 @@ async function loadState() {
   safeSet("time", new Date(s.time.now).toLocaleTimeString());
   safeSet("mode", s.mode);
 
-  safeSet("message", humanMessage(s));
-  $("details").innerText =
-    humanReason(s) + "\n\n" + predictionText(s);
+  const stresses = stressInfo(s);
+  const stressLine = stressMessage(stresses);
+
+  safeSet("message", stressLine || humanMessage(s));
+  $("details").innerText = humanReason(s, stresses);
 
   /* DNES */
   safeSet("temp", `${s.sensors.temperatureOutside.toFixed(1)} °C`);
@@ -175,10 +174,9 @@ async function loadState() {
   /* MOZEK */
   $("brainContent").innerHTML = `
     Režim: ${s.mode}<br>
+    Aktivní stresy: ${stresses.length ? stresses.join(", ") : "žádné"}<br>
     Strategie: ${s.memory.dailyPlan.energyStrategy}<br>
-    Sezóna: ${s.memory.dailyPlan.seasonPhase}<br>
-    Sampling: ${s.sampling.profile} (${s.sampling.intervalMin} min)<br>
-    Event: ${s.events.active || "žádný"}
+    Sampling: ${s.sampling.profile} (${s.sampling.intervalMin} min)
   `;
 }
 
