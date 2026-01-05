@@ -1,94 +1,32 @@
 body {
-  margin: 0;
   font-family: system-ui, sans-serif;
-  background: radial-gradient(circle at top, #0f172a, #020617);
+  background: #0f172a;
   color: #e5e7eb;
-  overflow: hidden;
+  margin: 0;
+  padding: 20px;
 }
 
-header {
-  display: flex;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #020617;
+h1 {
+  margin-bottom: 20px;
 }
 
-header button {
-  background: #1e293b;
-  border: none;
-  color: #e5e7eb;
-  padding: 6px 14px;
-  border-radius: 10px;
-  cursor: pointer;
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
 }
-
-header button.active {
-  background: #3b82f6;
-}
-
-main {
-  padding: 12px;
-}
-
-.view { display: none; }
-.view.active { display: block; }
 
 .card {
-  background: rgba(15, 23, 42, 0.85);
-  border-radius: 14px;
-  padding: 12px;
-  margin-bottom: 10px;
+  background: #111827;
+  padding: 16px;
+  border-radius: 12px;
 }
 
-.card.status {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.card.wide {
+  grid-column: span 2;
 }
 
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.tile {
-  background: linear-gradient(145deg, #020617, #0f172a);
-  border-radius: 14px;
-  padding: 10px;
-  text-align: center;
-}
-
-.tile-title {
-  font-size: 0.75em;
-  opacity: 0.7;
-}
-
-.tile-value {
-  font-size: 1.25em;
-  font-weight: 600;
-}
-
-canvas {
-  max-height: 220px;
-}
-
-.progress {
-  width: 200px;
-  height: 8px;
-  background: #1e293b;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-#dayProgress {
-  height: 100%;
-  background: #3b82f6;
-  width: 0%;
-}
-
-.small-text {
-  font-size: 0.8em;
-  opacity: 0.7;
+#fan {
+  font-size: 1.2em;
+  font-weight: bold;
 }
