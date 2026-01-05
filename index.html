@@ -145,7 +145,7 @@
 <script>
 async function updateUI() {
   try {
-    const res = await fetch("/state");
+    const res = await fetch("https://meteostanice-simulator-node-production.up.railway.app/state");
     const state = await res.json();
 
     // Prostředí
