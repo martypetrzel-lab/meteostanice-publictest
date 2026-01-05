@@ -78,27 +78,49 @@ function humanMessage(s) {
   const isDay = s.time.isDay;
 
   if (!isDay && soc < 0.3)
-    return "🌙 Je noc a energie ubývá. Přepínám do úsporného režimu.";
+    return "🌙 Je noc a energie rychle ubývá.";
 
   if (!isDay)
-    return "🌙 Je noc, sleduji minimum a šetřím energii.";
+    return "🌙 Je noc, šetřím energii.";
 
   if (soc < 0.25)
-    return "⚠️ Energie je kriticky nízká. Soustředím se jen na přežití.";
+    return "⚠️ Energie je kriticky nízká.";
 
   if (soc < 0.45)
-    return "🔋 Baterie není ideální, chovám se opatrně.";
+    return "🔋 Baterie není v ideálním stavu.";
 
-  if (net > 0.3 && isDay)
-    return "☀️ Slunce pomáhá, ukládám energii na později.";
+  if (net > 0.3)
+    return "☀️ Slunce pomáhá, ukládám energii.";
 
   if (net < 0)
-    return "🔄 Spotřeba je vyšší než příjem, hlídám rovnováhu.";
+    return "🔄 Spotřeba převyšuje příjem.";
 
   if (s.fan)
-    return "🌀 Aktivně chladím zařízení pro stabilní provoz.";
+    return "🌀 Aktivně chladím zařízení.";
 
-  return "✅ Podmínky jsou dobré, zařízení pracuje bez omezení.";
+  return "✅ Podmínky jsou stabilní.";
+}
+
+/* ================== PROČ ================== */
+function humanReason(s) {
+  const reasons = [];
+  const net = s.power.solarInW - s.power.loadW;
+
+  reasons.push(s.time.isDay ? "je den" : "je noc");
+  reasons.push(`SOC baterie je ${Math.round(s.battery.soc * 100)} %`);
+
+  if (net > 0.1) {
+    reasons.push("příjem energie je vyšší než spotřeba");
+  } else if (net < -0.1) {
+    reasons.push("spotřeba je vyšší než příjem");
+  } else {
+    reasons.push("energetická bilance je vyrovnaná");
+  }
+
+  if (s.fan) reasons.push("větrák je zapnutý");
+  reasons.push(`sampling: ${s.sampling.profile}`);
+
+  return "Protože " + reasons.join(", ") + ".";
 }
 
 /* ================== DATA ================== */
@@ -106,16 +128,12 @@ async function loadState() {
   const res = await fetch(API);
   const s = await res.json();
 
-  /* HLAVIČKA */
   safeSet("time", new Date(s.time.now).toLocaleTimeString());
   safeSet("mode", s.mode);
 
-  // 👇 TADY SE MĚNÍ TEXT „Normální provoz“
+  // 👇 HLÁŠKA + PROČ
   safeSet("message", humanMessage(s));
-
-  if (Array.isArray(s.details)) {
-    $("details").innerHTML = s.details.join(" · ");
-  }
+  $("details").innerText = humanReason(s);
 
   /* DNES */
   safeSet("temp", `${s.sensors.temperatureOutside.toFixed(1)} °C`);
