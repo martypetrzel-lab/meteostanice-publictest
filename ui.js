@@ -23,69 +23,66 @@ function showView(name) {
   $("btn" + name.charAt(0).toUpperCase() + name.slice(1))?.classList.add("active");
 }
 
-$("btnToday")?.addEventListener("click", () => showView("today"));
-$("btnHistory")?.addEventListener("click", () => showView("history"));
-$("btnEnergy")?.addEventListener("click", () => showView("energy"));
-$("btnBrain")?.addEventListener("click", () => showView("brain"));
+$("btnToday")?.onclick = () => showView("today");
+$("btnHistory")?.onclick = () => showView("history");
+$("btnEnergy")?.onclick = () => showView("energy");
+$("btnBrain")?.onclick = () => showView("brain");
 
 /* ================== GRAFY ================== */
 let todayChart = null;
 let energyChart = null;
 let initialized = false;
 
-// poslední vykreslené časy
 let lastTempLabel = null;
 let lastEnergyLabel = null;
 
 function initCharts(s) {
   if (initialized || !window.Chart) return;
 
-  const tempData = s.memory.today.temperature;
-  const energyIn = s.memory.today.energyIn;
-  const energyOut = s.memory.today.energyOut;
+  const t = s.memory.today.temperature;
+  const ei = s.memory.today.energyIn;
+  const eo = s.memory.today.energyOut;
 
   if ($("todayChart")) {
     todayChart = new Chart($("todayChart"), {
       type: "line",
       data: {
-        labels: tempData.map(x => x.t),
+        labels: t.map(x => x.t),
         datasets: [{
           label: "Teplota (°C)",
-          data: tempData.map(x => x.v),
+          data: t.map(x => x.v),
           borderColor: "#3b82f6",
           tension: 0.3
         }]
       },
       options: { animation: false }
-    };
-
-    lastTempLabel = tempData.at(-1)?.t ?? null;
+    });
+    lastTempLabel = t.at(-1)?.t;
   }
 
   if ($("energyTodayChart")) {
     energyChart = new Chart($("energyTodayChart"), {
       type: "line",
       data: {
-        labels: energyIn.map(x => x.t),
+        labels: ei.map(x => x.t),
         datasets: [
           {
             label: "Příjem (W)",
-            data: energyIn.map(x => x.v),
+            data: ei.map(x => x.v),
             borderColor: "#22c55e",
             tension: 0.3
           },
           {
             label: "Výdej (W)",
-            data: energyOut.map(x => x.v),
+            data: eo.map(x => x.v),
             borderColor: "#ef4444",
             tension: 0.3
           }
         ]
       },
       options: { animation: false }
-    };
-
-    lastEnergyLabel = energyIn.at(-1)?.t ?? null;
+    });
+    lastEnergyLabel = ei.at(-1)?.t;
   }
 
   initialized = true;
@@ -96,22 +93,28 @@ async function loadState() {
   try {
     const s = await fetch(API, { cache: "no-store" }).then(r => r.json());
 
+    /* HLAVIČKA */
     safeSet("time", new Date(s.time.now).toLocaleTimeString());
     safeSet("message", s.message);
+
+    /* DNES */
     safeSet("temp", `${s.device.temperature.toFixed(1)} °C`);
     safeSet("battery", `${s.device.battery.voltage.toFixed(2)} V`);
     safeSet("light", `${Math.round(s.device.light)} lx`);
     safeSet("fan", s.device.fan ? "ON" : "OFF");
 
+    /* 🔋 ENERGIE – TADY BYLA CHYBA */
+    safeSet("energyIn", `${s.device.power.solarInW.toFixed(2)} W`);
+    safeSet("energyOut", `${s.device.power.loadW.toFixed(2)} W`);
+    safeSet("energyBalance", `${s.device.power.balanceWh.toFixed(3)} Wh`);
+    safeSet("energyState", s.device.mode);
+
+    /* GRAFY */
     initCharts(s);
 
-    /* ➕ DOPLNĚNÍ NOVÝCH BODŮ */
-    const tempArr = s.memory.today.temperature;
-    const energyInArr = s.memory.today.energyIn;
-    const energyOutArr = s.memory.today.energyOut;
-
-    if (todayChart && tempArr.length) {
-      const last = tempArr.at(-1);
+    const tArr = s.memory.today.temperature;
+    if (todayChart && tArr.length) {
+      const last = tArr.at(-1);
       if (last.t !== lastTempLabel) {
         todayChart.data.labels.push(last.t);
         todayChart.data.datasets[0].data.push(last.v);
@@ -120,14 +123,15 @@ async function loadState() {
       }
     }
 
-    if (energyChart && energyInArr.length) {
-      const lastI = energyInArr.at(-1);
-      const lastO = energyOutArr.at(-1);
-      if (lastI.t !== lastEnergyLabel) {
-        energyChart.data.labels.push(lastI.t);
-        energyChart.data.datasets[0].data.push(lastI.v);
-        energyChart.data.datasets[1].data.push(lastO.v);
-        lastEnergyLabel = lastI.t;
+    const ei = s.memory.today.energyIn;
+    const eo = s.memory.today.energyOut;
+    if (energyChart && ei.length) {
+      const last = ei.at(-1);
+      if (last.t !== lastEnergyLabel) {
+        energyChart.data.labels.push(last.t);
+        energyChart.data.datasets[0].data.push(last.v);
+        energyChart.data.datasets[1].data.push(eo.at(-1).v);
+        lastEnergyLabel = last.t;
         energyChart.update();
       }
     }
