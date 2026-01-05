@@ -12,7 +12,8 @@ function safeSet(id, value) {
 const views = {
   today: $("view-today"),
   history: $("view-history"),
-  energy: $("view-energy")
+  energy: $("view-energy"),
+  brain: $("view-brain")
 };
 
 function show(view, btn) {
@@ -25,6 +26,7 @@ function show(view, btn) {
 $("btnToday")?.addEventListener("click", () => show("today", $("btnToday")));
 $("btnHistory")?.addEventListener("click", () => show("history", $("btnHistory")));
 $("btnEnergy")?.addEventListener("click", () => show("energy", $("btnEnergy")));
+$("btnBrain")?.addEventListener("click", () => show("brain", $("btnBrain")));
 
 /* ================== GRAFY ================== */
 const todayChart = $("todayChart")
@@ -45,22 +47,7 @@ const historyChart = $("historyChart")
           { label: "Maximum (°C)", data: [], backgroundColor: "#ef4444" }
         ]
       },
-      options: {
-        animation: false,
-        plugins: {
-          tooltip: {
-            callbacks: {
-              afterBody: ctx => {
-                const i = ctx[0].dataIndex;
-                const d = historyChart._dataSource?.[i];
-                return d
-                  ? [`Režim: ${d.mode}`, d.summary]
-                  : "";
-              }
-            }
-          }
-        }
-      }
+      options: { animation: false }
     })
   : null;
 
@@ -102,51 +89,44 @@ async function loadState() {
     safeSet("mode", s.mode);
     safeSet("message", s.message);
 
-    /* DETAILY MOZKU */
     if ($("details") && Array.isArray(s.details)) {
       $("details").innerHTML = s.details.join(" · ");
     }
 
-    /* DNES – KARTY */
-    safeSet("temp", `${s.sensors.temperature.toFixed(1)} °C`);
+    /* DNES */
+    safeSet("temp", `${s.sensors.temperatureOutside.toFixed(1)} °C`);
     safeSet("battery", `${s.battery.voltage.toFixed(2)} V`);
     safeSet("light", `${Math.round(s.sensors.light)} lx`);
     safeSet("fan", s.fan ? "ON" : "OFF");
 
-    /* DNES – GRAF */
     if (todayChart && s.memory?.today?.temperature) {
       todayChart.data.labels = s.memory.today.temperature.map(p => p.t.slice(11, 16));
       todayChart.data.datasets[0].data = s.memory.today.temperature.map(p => p.v);
       todayChart.update();
     }
 
-    /* HISTORIE – TÝDEN */
+    /* HISTORIE */
     if (historyChart && s.memory?.history?.length) {
-      historyChart._dataSource = s.memory.history;
       historyChart.data.labels = s.memory.history.map(d => d.day);
       historyChart.data.datasets[0].data = s.memory.history.map(d => d.min);
       historyChart.data.datasets[1].data = s.memory.history.map(d => d.max);
       historyChart.update();
     }
 
-    /* ENERGIE – KARTY */
+    /* ENERGIE */
     safeSet("energyIn", `${s.power.solarInW.toFixed(2)} W`);
     safeSet("energyOut", `${s.power.loadW.toFixed(2)} W`);
     safeSet("energyBalance", `${s.power.balanceWh.toFixed(3)} Wh`);
 
-    /* ENERGIE – STAV */
     const net = s.power.solarInW - s.power.loadW;
     if (Math.abs(net) < 0.01) {
       safeSet("energyState", "Stabilní");
     } else if (net > 0) {
-      const h = ((1 - s.battery.soc) * 12 / net).toFixed(1);
-      safeSet("energyState", `Nabíjí se (~${h} h)`);
+      safeSet("energyState", "Nabíjí se");
     } else {
-      const h = (s.battery.soc * 12 / Math.abs(net)).toFixed(1);
-      safeSet("energyState", `Vybíjí se (~${h} h)`);
+      safeSet("energyState", "Vybíjí se");
     }
 
-    /* ENERGIE – GRAFY */
     if (energyTodayChart && s.memory?.today?.energyIn) {
       energyTodayChart.data.labels = s.memory.today.energyIn.map(p => p.t.slice(11, 16));
       energyTodayChart.data.datasets[0].data = s.memory.today.energyIn.map(p => p.v);
@@ -158,6 +138,18 @@ async function loadState() {
       energyWeekChart.data.labels = s.memory.energyDays.map(d => d.day);
       energyWeekChart.data.datasets[0].data = s.memory.energyDays.map(d => d.wh);
       energyWeekChart.update();
+    }
+
+    /* ===== MOZEK ===== */
+    if ($("brainContent")) {
+      const p = s.memory.dailyPlan;
+      $("brainContent").innerHTML = `
+        <b>Režim:</b> ${s.mode}<br>
+        <b>Plán dne:</b> ${p.energyStrategy}<br>
+        <b>Sezónní fáze:</b> ${p.seasonPhase}<br>
+        <b>Sampling:</b> ${s.sampling.profile} (${s.sampling.intervalMin} min)<br>
+        <b>Event:</b> ${s.events?.active || "žádný"}
+      `;
     }
 
   } catch (e) {
