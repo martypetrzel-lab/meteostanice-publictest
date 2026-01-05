@@ -1,8 +1,11 @@
 const API = "https://meteostanice-simulator-node-production.up.railway.app/state";
 
 /* ================== HELPERY ================== */
-const $ = id => document.getElementById(id);
-const safeSet = (id, v) => { if ($(id)) $(id).innerText = v; };
+const $ = (id) => document.getElementById(id);
+const safeSet = (id, v) => {
+  const el = $(id);
+  if (el) el.innerText = v;
+};
 
 /* ================== ZÁLOŽKY ================== */
 const views = {
@@ -13,35 +16,50 @@ const views = {
 };
 
 function show(view, btn) {
-  Object.values(views).forEach(v => v?.classList.remove("active"));
+  Object.values(views).forEach(v => v && v.classList.remove("active"));
   document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
   views[view]?.classList.add("active");
   btn?.classList.add("active");
 }
 
-$("btnToday")?.onclick = e => show("today", e.target);
-$("btnHistory")?.onclick = e => show("history", e.target);
-$("btnEnergy")?.onclick = e => show("energy", e.target);
-$("btnBrain")?.onclick = e => show("brain", e.target);
+$("btnToday")?.addEventListener("click", e => show("today", e.target));
+$("btnHistory")?.addEventListener("click", e => show("history", e.target));
+$("btnEnergy")?.addEventListener("click", e => show("energy", e.target));
+$("btnBrain")?.addEventListener("click", e => show("brain", e.target));
 
 /* ================== GRAFY ================== */
-const todayChart = $("todayChart") && new Chart($("todayChart"), {
-  type: "line",
-  data: { labels: [], datasets: [{ label: "Teplota (°C)", data: [], borderColor: "#3b82f6", tension: 0.3 }] },
-  options: { animation: false }
-});
+let todayChart = null;
+let energyTodayChart = null;
 
-const energyTodayChart = $("energyTodayChart") && new Chart($("energyTodayChart"), {
-  type: "line",
-  data: {
-    labels: [],
-    datasets: [
-      { label: "Příjem (W)", data: [], borderColor: "#22c55e", tension: 0.3 },
-      { label: "Výdej (W)", data: [], borderColor: "#ef4444", tension: 0.3 }
-    ]
-  },
-  options: { animation: false }
-});
+if (window.Chart && $("todayChart")) {
+  todayChart = new Chart($("todayChart"), {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Teplota (°C)",
+        data: [],
+        borderColor: "#3b82f6",
+        tension: 0.3
+      }]
+    },
+    options: { animation: false }
+  });
+}
+
+if (window.Chart && $("energyTodayChart")) {
+  energyTodayChart = new Chart($("energyTodayChart"), {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        { label: "Příjem (W)", data: [], borderColor: "#22c55e", tension: 0.3 },
+        { label: "Výdej (W)", data: [], borderColor: "#ef4444", tension: 0.3 }
+      ]
+    },
+    options: { animation: false }
+  });
+}
 
 /* ================== LIVE UPDATE ================== */
 async function loadState() {
@@ -54,21 +72,24 @@ async function loadState() {
     safeSet("message", s.message);
 
     /* HODNOTY */
+    safeSet("temperature", `${s.device.temperature.toFixed(1)} °C`);
     safeSet("battery", `${s.device.battery.voltage.toFixed(2)} V`);
     safeSet("light", `${Math.round(s.device.light)} lx`);
-    safeSet("fan", s.fan ? "ON" : "OFF");
+    safeSet("fan", s.device.fan ? "ON" : "OFF");
 
     /* TEPL. GRAF */
     if (todayChart && s.memory?.today?.temperature?.length) {
       const t = s.memory.today.temperature.at(-1);
-      todayChart.data.labels.push(t.t);
-      todayChart.data.datasets[0].data.push(t.v);
+      if (typeof t.v === "number") {
+        todayChart.data.labels.push(t.t);
+        todayChart.data.datasets[0].data.push(t.v);
 
-      if (todayChart.data.labels.length > 120) {
-        todayChart.data.labels.shift();
-        todayChart.data.datasets[0].data.shift();
+        if (todayChart.data.labels.length > 120) {
+          todayChart.data.labels.shift();
+          todayChart.data.datasets[0].data.shift();
+        }
+        todayChart.update();
       }
-      todayChart.update();
     }
 
     /* ENERGIE */
@@ -87,8 +108,8 @@ async function loadState() {
       energyTodayChart.update();
     }
 
-  } catch {
-    console.warn("UI čeká na backend…");
+  } catch (e) {
+    console.warn("UI čeká na backend…", e);
   }
 }
 
