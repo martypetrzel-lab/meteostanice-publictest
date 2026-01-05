@@ -1,169 +1,63 @@
 const API = "https://meteostanice-simulator-node-production.up.railway.app/state";
 
-/* ================== HELPERY ================== */
-const $ = id => document.getElementById(id);
-
-function safeSet(id, value) {
-  const el = $(id);
-  if (el) el.innerText = value;
-}
-
-/* ================== ZÁLOŽKY ================== */
-const views = {
-  today: $("view-today"),
-  history: $("view-history"),
-  energy: $("view-energy")
-};
-
-function show(view, btn) {
-  Object.values(views).forEach(v => v && v.classList.remove("active"));
-  document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
-  views[view]?.classList.add("active");
-  btn?.classList.add("active");
-}
-
-$("btnToday")?.addEventListener("click", () => show("today", $("btnToday")));
-$("btnHistory")?.addEventListener("click", () => show("history", $("btnHistory")));
-$("btnEnergy")?.addEventListener("click", () => show("energy", $("btnEnergy")));
-
-/* ================== GRAFY ================== */
-const todayChart = $("todayChart")
-  ? new Chart($("todayChart"), {
-      type: "line",
-      data: { labels: [], datasets: [{ label: "Teplota (°C)", data: [], borderColor: "#3b82f6", tension: 0.3 }] },
-      options: { animation: false }
-    })
-  : null;
-
-const historyChart = $("historyChart")
-  ? new Chart($("historyChart"), {
-      type: "bar",
-      data: {
-        labels: [],
-        datasets: [
-          { label: "Minimum (°C)", data: [], backgroundColor: "#60a5fa" },
-          { label: "Maximum (°C)", data: [], backgroundColor: "#ef4444" }
-        ]
-      },
-      options: {
-        animation: false,
-        plugins: {
-          tooltip: {
-            callbacks: {
-              afterBody: ctx => {
-                const i = ctx[0].dataIndex;
-                const d = historyChart._dataSource?.[i];
-                return d
-                  ? [`Režim: ${d.mode}`, d.summary]
-                  : "";
-              }
-            }
-          }
-        }
-      }
-    })
-  : null;
-
-const energyTodayChart = $("energyTodayChart")
-  ? new Chart($("energyTodayChart"), {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [
-          { label: "Příjem (W)", data: [], borderColor: "#22c55e", tension: 0.3 },
-          { label: "Výdej (W)", data: [], borderColor: "#ef4444", tension: 0.3 }
-        ]
-      },
-      options: { animation: false }
-    })
-  : null;
-
-const energyWeekChart = $("energyWeekChart")
-  ? new Chart($("energyWeekChart"), {
-      type: "bar",
-      data: {
-        labels: [],
-        datasets: [
-          { label: "Denní bilance (Wh)", data: [], backgroundColor: "#3b82f6" }
-        ]
-      },
-      options: { animation: false }
-    })
-  : null;
-
-/* ================== DATA ================== */
 async function loadState() {
-  try {
-    const res = await fetch(API);
-    const s = await res.json();
+  const res = await fetch(API);
+  const s = await res.json();
 
-    /* HLAVIČKA */
-    safeSet("time", new Date(s.time.now).toLocaleTimeString());
-    safeSet("mode", s.mode);
-    safeSet("message", s.message);
+  if (!s || !s.memory) return;
 
-    /* DETAILY MOZKU */
-    if ($("details") && Array.isArray(s.details)) {
-      $("details").innerHTML = s.details.join(" · ");
-    }
-
-    /* DNES – KARTY */
-    safeSet("temp", `${s.sensors.temperature.toFixed(1)} °C`);
-    safeSet("battery", `${s.battery.voltage.toFixed(2)} V`);
-    safeSet("light", `${Math.round(s.sensors.light)} lx`);
-    safeSet("fan", s.fan ? "ON" : "OFF");
-
-    /* DNES – GRAF */
-    if (todayChart && s.memory?.today?.temperature) {
-      todayChart.data.labels = s.memory.today.temperature.map(p => p.t.slice(11, 16));
-      todayChart.data.datasets[0].data = s.memory.today.temperature.map(p => p.v);
-      todayChart.update();
-    }
-
-    /* HISTORIE – TÝDEN */
-    if (historyChart && s.memory?.history?.length) {
-      historyChart._dataSource = s.memory.history;
-      historyChart.data.labels = s.memory.history.map(d => d.day);
-      historyChart.data.datasets[0].data = s.memory.history.map(d => d.min);
-      historyChart.data.datasets[1].data = s.memory.history.map(d => d.max);
-      historyChart.update();
-    }
-
-    /* ENERGIE – KARTY */
-    safeSet("energyIn", `${s.power.solarInW.toFixed(2)} W`);
-    safeSet("energyOut", `${s.power.loadW.toFixed(2)} W`);
-    safeSet("energyBalance", `${s.power.balanceWh.toFixed(3)} Wh`);
-
-    /* ENERGIE – STAV */
-    const net = s.power.solarInW - s.power.loadW;
-    if (Math.abs(net) < 0.01) {
-      safeSet("energyState", "Stabilní");
-    } else if (net > 0) {
-      const h = ((1 - s.battery.soc) * 12 / net).toFixed(1);
-      safeSet("energyState", `Nabíjí se (~${h} h)`);
-    } else {
-      const h = (s.battery.soc * 12 / Math.abs(net)).toFixed(1);
-      safeSet("energyState", `Vybíjí se (~${h} h)`);
-    }
-
-    /* ENERGIE – GRAFY */
-    if (energyTodayChart && s.memory?.today?.energyIn) {
-      energyTodayChart.data.labels = s.memory.today.energyIn.map(p => p.t.slice(11, 16));
-      energyTodayChart.data.datasets[0].data = s.memory.today.energyIn.map(p => p.v);
-      energyTodayChart.data.datasets[1].data = s.memory.today.energyOut.map(p => p.v);
-      energyTodayChart.update();
-    }
-
-    if (energyWeekChart && s.memory?.energyDays?.length) {
-      energyWeekChart.data.labels = s.memory.energyDays.map(d => d.day);
-      energyWeekChart.data.datasets[0].data = s.memory.energyDays.map(d => d.wh);
-      energyWeekChart.update();
-    }
-
-  } catch (e) {
-    console.error("Chyba načtení stavu", e);
-  }
+  renderStatus(s);
+  renderDecision(s);
+  renderPlan(s);
+  renderSampling(s);
 }
 
+function renderStatus(s) {
+  document.getElementById("status").innerHTML = `
+    🌡️ Venek: ${s.environment.temperature.toFixed(1)} °C<br>
+    🌡️ Vnitřek: ${s.environment.insideTemp.toFixed(1)} °C<br>
+    🔋 Baterie: ${s.battery.voltage.toFixed(2)} V (${Math.round(s.battery.soc * 100)} %)<br>
+    ⚡ Solár: ${s.power.solarInW.toFixed(2)} W / Zátěž: ${s.power.loadW.toFixed(2)} W<br>
+    🌀 Větrák: ${s.fan ? "ZAPNUT" : "VYPNUT"}
+  `;
+}
+
+function renderDecision(s) {
+  document.getElementById("decision").innerHTML = `
+    <b>Režim:</b> ${s.mode}<br>
+    <b>Zpráva:</b> ${s.message}<br>
+    <b>Důvody:</b>
+    <ul>
+      ${s.details.map(d => `<li>${d}</li>`).join("")}
+    </ul>
+  `;
+}
+
+function renderPlan(s) {
+  const p = s.memory.dailyPlan;
+  if (!p || !p.date) {
+    document.getElementById("dailyPlan").innerHTML =
+      "Plán dne zatím není vytvořen.";
+    return;
+  }
+
+  document.getElementById("dailyPlan").innerHTML = `
+    📅 Datum: ${p.date}<br>
+    🔋 Energetická strategie: <b>${p.energyStrategy}</b><br>
+    🌡️ Tepelná strategie: ${p.thermalStrategy}<br>
+    📈 Sampling bias: ${p.samplingBias}<br>
+    🎯 Důvěra: ${Math.round(p.confidence * 100)} %<br>
+    📝 Poznámka: ${p.notes}
+  `;
+}
+
+function renderSampling(s) {
+  document.getElementById("sampling").innerHTML = `
+    ⏱️ Profil: <b>${s.sampling.profile}</b><br>
+    ⏲️ Interval: ${s.sampling.intervalMin} min<br>
+    🌩️ Event: ${s.events?.active || "žádný"}
+  `;
+}
+
+setInterval(loadState, 3000);
 loadState();
-setInterval(loadState, 5000);
