@@ -1,78 +1,188 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-<meta charset="UTF-8">
-<title>Meteostanice – mozek v akci</title>
-<style>
-body {
-  font-family: system-ui;
-  background: radial-gradient(circle at top, #1b2a4e, #050b1e);
-  color: #fff;
-  padding: 40px;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-}
-.card {
-  background: rgba(255,255,255,0.05);
-  padding: 20px;
-  border-radius: 16px;
-}
-h1 { margin-bottom: 30px; }
-.value { font-size: 1.4em; }
-.small { opacity: 0.6; margin-top: 10px; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Meteostanice – mozek v akci</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: #101a2f;
+      --text: #e6ecff;
+      --muted: #8fa2d9;
+      --accent: #4da3ff;
+      --good: #4caf50;
+      --warn: #ff9800;
+      --bad: #f44336;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu;
+      background: radial-gradient(circle at top, #14204a, #060b18);
+      color: var(--text);
+    }
+
+    header {
+      padding: 24px 32px;
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 24px;
+      padding: 0 32px 32px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, #121d36, #0b1326);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,.35);
+    }
+
+    .card h2 {
+      margin: 0 0 16px;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      font-size: 16px;
+    }
+
+    .label {
+      color: var(--muted);
+    }
+
+    .value {
+      font-weight: 600;
+    }
+
+    .fan-on { color: var(--warn); }
+    .fan-off { color: var(--muted); }
+
+    .verdict {
+      margin-top: 12px;
+      font-size: 15px;
+      line-height: 1.5;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+    }
+
+    footer {
+      padding: 16px 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
 </head>
+
 <body>
 
-<h1>🌦️ Meteostanice – mozek v akci</h1>
+<header>🌦️ Meteostanice – mozek v akci</header>
 
-<div class="grid">
-  <div class="card">
-    <h3>🌞 Prostředí</h3>
-    <div>Světlo: <span id="light" class="value">–</span> lx</div>
-    <div>Teplota: <span id="temp" class="value">–</span> °C</div>
-  </div>
+<main>
 
-  <div class="card">
-    <h3>🔋 Energie</h3>
-    <div>SOC: <span id="soc" class="value">–</span> %</div>
-    <div>Výroba: <span id="prod" class="value">–</span> W</div>
-  </div>
+  <!-- PROSTŘEDÍ -->
+  <section class="card">
+    <h2>🌞 Prostředí</h2>
+    <div class="row">
+      <div class="label">Světlo</div>
+      <div class="value"><span id="light">–</span> lx</div>
+    </div>
+    <div class="row">
+      <div class="label">Teplota</div>
+      <div class="value"><span id="temp">–</span> °C</div>
+    </div>
+  </section>
 
-  <div class="card">
-    <h3>🌀 Větrák</h3>
-    <div id="fan" class="value">–</div>
-  </div>
+  <!-- ENERGIE -->
+  <section class="card">
+    <h2>🔋 Energie</h2>
+    <div class="row">
+      <div class="label">SOC</div>
+      <div class="value"><span id="soc">–</span> %</div>
+    </div>
+    <div class="row">
+      <div class="label">Zátěž</div>
+      <div class="value"><span id="load">–</span> W</div>
+    </div>
+  </section>
 
-  <div class="card">
-    <h3>🧠 Mozek</h3>
-    <div id="verdict">–</div>
-  </div>
-</div>
+  <!-- VĚTRÁK -->
+  <section class="card">
+    <h2>🌀 Větrák</h2>
+    <div class="row">
+      <div class="label">Stav</div>
+      <div class="value" id="fan">–</div>
+    </div>
+  </section>
 
-<div class="small">Data čtena ze /state – aktualizace každou 1 s</div>
+  <!-- MOZEK -->
+  <section class="card">
+    <h2>🧠 Mozek – rozhodnutí</h2>
+    <div class="verdict" id="verdict">–</div>
+  </section>
+
+</main>
+
+<footer>
+  Data jsou čtena výhradně ze <code>/state</code> • aktualizace každou 1 s
+</footer>
 
 <script>
-async function update() {
+async function updateUI() {
   try {
-    const r = await fetch("/state");
-    const s = await r.json();
+    const res = await fetch("https://meteostanice-simulator-node-production.up.railway.app/state");
+    const state = await res.json();
 
-    light.textContent = s.environment.light.toFixed(1);
-    temp.textContent = s.device.temperature.toFixed(1);
-    soc.textContent = (s.power.soc * 100).toFixed(1);
-    prod.textContent = s.power.production.toFixed(2);
-    fan.textContent = s.device.fan ? "ZAPNUTÝ" : "VYPNUTÝ";
-    verdict.textContent = s.brain.verdict;
+    // Prostředí
+    document.getElementById("light").innerText =
+      state.world?.environment?.light ?? "–";
+
+    document.getElementById("temp").innerText =
+      state.world?.environment?.temperature ?? "–";
+
+    // Energie
+    document.getElementById("soc").innerText =
+      state.energy?.soc ?? "–";
+
+    document.getElementById("load").innerText =
+      state.energy?.load ?? "–";
+
+    // Větrák
+    const fanEl = document.getElementById("fan");
+    if (state.device?.fan) {
+      fanEl.innerText = "ZAPNUTÝ";
+      fanEl.className = "value fan-on";
+    } else {
+      fanEl.innerText = "VYPNUTÝ";
+      fanEl.className = "value fan-off";
+    }
+
+    // Mozek
+    document.getElementById("verdict").innerText =
+      state.brain?.verdict ?? "–";
+
   } catch (e) {
     console.error("STATE ERROR", e);
   }
 }
-setInterval(update, 1000);
-update();
+
+setInterval(updateUI, 1000);
+updateUI();
 </script>
 
 </body>
