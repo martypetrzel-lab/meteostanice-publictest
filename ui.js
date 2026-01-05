@@ -45,7 +45,22 @@ const historyChart = $("historyChart")
           { label: "Maximum (°C)", data: [], backgroundColor: "#ef4444" }
         ]
       },
-      options: { animation: false }
+      options: {
+        animation: false,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              afterBody: ctx => {
+                const i = ctx[0].dataIndex;
+                const d = historyChart._dataSource?.[i];
+                return d
+                  ? [`Režim: ${d.mode}`, d.summary]
+                  : "";
+              }
+            }
+          }
+        }
+      }
     })
   : null;
 
@@ -66,7 +81,12 @@ const energyTodayChart = $("energyTodayChart")
 const energyWeekChart = $("energyWeekChart")
   ? new Chart($("energyWeekChart"), {
       type: "bar",
-      data: { labels: [], datasets: [{ label: "Denní bilance (Wh)", data: [], backgroundColor: "#3b82f6" }] },
+      data: {
+        labels: [],
+        datasets: [
+          { label: "Denní bilance (Wh)", data: [], backgroundColor: "#3b82f6" }
+        ]
+      },
       options: { animation: false }
     })
   : null;
@@ -81,6 +101,11 @@ async function loadState() {
     safeSet("time", new Date(s.time.now).toLocaleTimeString());
     safeSet("mode", s.mode);
     safeSet("message", s.message);
+
+    /* DETAILY MOZKU */
+    if ($("details") && Array.isArray(s.details)) {
+      $("details").innerHTML = s.details.join(" · ");
+    }
 
     /* DNES – KARTY */
     safeSet("temp", `${s.sensors.temperature.toFixed(1)} °C`);
@@ -97,6 +122,7 @@ async function loadState() {
 
     /* HISTORIE – TÝDEN */
     if (historyChart && s.memory?.history?.length) {
+      historyChart._dataSource = s.memory.history;
       historyChart.data.labels = s.memory.history.map(d => d.day);
       historyChart.data.datasets[0].data = s.memory.history.map(d => d.min);
       historyChart.data.datasets[1].data = s.memory.history.map(d => d.max);
@@ -130,7 +156,7 @@ async function loadState() {
 
     if (energyWeekChart && s.memory?.energyDays?.length) {
       energyWeekChart.data.labels = s.memory.energyDays.map(d => d.day);
-      energyWeekChart.data.datasets[0].data = s.memory.energyDays.map(d => d.balance);
+      energyWeekChart.data.datasets[0].data = s.memory.energyDays.map(d => d.wh);
       energyWeekChart.update();
     }
 
