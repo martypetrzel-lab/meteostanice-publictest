@@ -19,14 +19,24 @@ function showView(name) {
   Object.values(views).forEach(v => v && v.classList.remove("active"));
   document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
 
-  views[name]?.classList.add("active");
-  $("btn" + name.charAt(0).toUpperCase() + name.slice(1))?.classList.add("active");
+  if (views[name]) views[name].classList.add("active");
+
+  const btn = $("btn" + name.charAt(0).toUpperCase() + name.slice(1));
+  if (btn) btn.classList.add("active");
 }
 
-$("btnToday")?.onclick = () => showView("today");
-$("btnHistory")?.onclick = () => showView("history");
-$("btnEnergy")?.onclick = () => showView("energy");
-$("btnBrain")?.onclick = () => showView("brain");
+/* NAVÁZÁNÍ KLIKŮ – BEZ ?. */
+const btnToday = $("btnToday");
+if (btnToday) btnToday.onclick = () => showView("today");
+
+const btnHistory = $("btnHistory");
+if (btnHistory) btnHistory.onclick = () => showView("history");
+
+const btnEnergy = $("btnEnergy");
+if (btnEnergy) btnEnergy.onclick = () => showView("energy");
+
+const btnBrain = $("btnBrain");
+if (btnBrain) btnBrain.onclick = () => showView("brain");
 
 /* ================== GRAFY ================== */
 let todayChart = null;
@@ -93,23 +103,19 @@ async function loadState() {
   try {
     const s = await fetch(API, { cache: "no-store" }).then(r => r.json());
 
-    /* HLAVIČKA */
     safeSet("time", new Date(s.time.now).toLocaleTimeString());
     safeSet("message", s.message);
 
-    /* DNES */
     safeSet("temp", `${s.device.temperature.toFixed(1)} °C`);
     safeSet("battery", `${s.device.battery.voltage.toFixed(2)} V`);
     safeSet("light", `${Math.round(s.device.light)} lx`);
     safeSet("fan", s.device.fan ? "ON" : "OFF");
 
-    /* 🔋 ENERGIE – TADY BYLA CHYBA */
     safeSet("energyIn", `${s.device.power.solarInW.toFixed(2)} W`);
     safeSet("energyOut", `${s.device.power.loadW.toFixed(2)} W`);
     safeSet("energyBalance", `${s.device.power.balanceWh.toFixed(3)} Wh`);
     safeSet("energyState", s.device.mode);
 
-    /* GRAFY */
     initCharts(s);
 
     const tArr = s.memory.today.temperature;
@@ -132,12 +138,12 @@ async function loadState() {
         energyChart.data.datasets[0].data.push(last.v);
         energyChart.data.datasets[1].data.push(eo.at(-1).v);
         lastEnergyLabel = last.t;
-        energyChart.update();
+        👉 energyChart.update();
       }
     }
 
-  } catch {
-    console.warn("UI čeká na backend…");
+  } catch (e) {
+    console.warn("UI čeká na backend…", e);
   }
 }
 
