@@ -31,7 +31,10 @@ $("btnBrain").onclick   = () => show("brain", $("btnBrain"));
 /* ================== GRAFY ================== */
 const todayChart = new Chart($("todayChart"), {
   type: "line",
-  data: { labels: [], datasets: [{ label: "Teplota (°C)", data: [], borderColor: "#3b82f6", tension: 0.3 }] },
+  data: {
+    labels: [],
+    datasets: [{ label: "Teplota (°C)", data: [], borderColor: "#3b82f6", tension: 0.3 }]
+  },
   options: { animation: false }
 });
 
@@ -61,18 +64,54 @@ const energyTodayChart = new Chart($("energyTodayChart"), {
 
 const energyWeekChart = new Chart($("energyWeekChart"), {
   type: "bar",
-  data: { labels: [], datasets: [{ label: "Denní bilance (Wh)", data: [], backgroundColor: "#3b82f6" }] },
+  data: {
+    labels: [],
+    datasets: [{ label: "Denní bilance (Wh)", data: [], backgroundColor: "#3b82f6" }]
+  },
   options: { animation: false }
 });
+
+/* ================== LIDSKÁ HLÁŠKA ================== */
+function humanMessage(s) {
+  const net = s.power.solarInW - s.power.loadW;
+  const soc = s.battery.soc;
+  const isDay = s.time.isDay;
+
+  if (!isDay && soc < 0.3)
+    return "🌙 Je noc a energie ubývá. Přepínám do úsporného režimu.";
+
+  if (!isDay)
+    return "🌙 Je noc, sleduji minimum a šetřím energii.";
+
+  if (soc < 0.25)
+    return "⚠️ Energie je kriticky nízká. Soustředím se jen na přežití.";
+
+  if (soc < 0.45)
+    return "🔋 Baterie není ideální, chovám se opatrně.";
+
+  if (net > 0.3 && isDay)
+    return "☀️ Slunce pomáhá, ukládám energii na později.";
+
+  if (net < 0)
+    return "🔄 Spotřeba je vyšší než příjem, hlídám rovnováhu.";
+
+  if (s.fan)
+    return "🌀 Aktivně chladím zařízení pro stabilní provoz.";
+
+  return "✅ Podmínky jsou dobré, zařízení pracuje bez omezení.";
+}
 
 /* ================== DATA ================== */
 async function loadState() {
   const res = await fetch(API);
   const s = await res.json();
 
+  /* HLAVIČKA */
   safeSet("time", new Date(s.time.now).toLocaleTimeString());
   safeSet("mode", s.mode);
-  safeSet("message", s.message);
+
+  // 👇 TADY SE MĚNÍ TEXT „Normální provoz“
+  safeSet("message", humanMessage(s));
 
   if (Array.isArray(s.details)) {
     $("details").innerHTML = s.details.join(" · ");
