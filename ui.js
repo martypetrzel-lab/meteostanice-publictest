@@ -19,14 +19,20 @@ const views = {
 function show(view, btn) {
   Object.values(views).forEach(v => v && v.classList.remove("active"));
   document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
-  views[view]?.classList.add("active");
-  btn?.classList.add("active");
+  if (views[view]) views[view].classList.add("active");
+  if (btn) btn.classList.add("active");
 }
 
-$("btnToday")?.onclick   = () => show("today", $("btnToday"));
-$("btnHistory")?.onclick = () => show("history", $("btnHistory"));
-$("btnEnergy")?.onclick  = () => show("energy", $("btnEnergy"));
-$("btnBrain")?.onclick   = () => show("brain", $("btnBrain"));
+/* === NAVĚŠENÍ EVENTŮ (SPRÁVNĚ) === */
+const btnToday = $("btnToday");
+const btnHistory = $("btnHistory");
+const btnEnergy = $("btnEnergy");
+const btnBrain = $("btnBrain");
+
+if (btnToday) btnToday.onclick = () => show("today", btnToday);
+if (btnHistory) btnHistory.onclick = () => show("history", btnHistory);
+if (btnEnergy) btnEnergy.onclick = () => show("energy", btnEnergy);
+if (btnBrain) btnBrain.onclick = () => show("brain", btnBrain);
 
 /* ================== GRAFY ================== */
 const todayChart = $("todayChart")
@@ -77,28 +83,20 @@ const energyWeekChart = $("energyWeekChart")
 async function loadState() {
   try {
     const res = await fetch(API);
-    if (!res.ok) throw new Error("API not available");
+    if (!res.ok) throw new Error("API not ready");
     const s = await res.json();
 
-    /* === HLAVIČKA === */
-    if (s.time?.now) {
-      safeSet("time", new Date(s.time.now).toLocaleTimeString());
-    } else {
-      safeSet("time", "--:--:--");
-    }
-
+    if (s.time?.now) safeSet("time", new Date(s.time.now).toLocaleTimeString());
     safeSet("mode", s.mode ?? "--");
     safeSet("message", s.message ?? "Čekám na data…");
 
-    /* DETAILY */
     if (Array.isArray(s.details)) {
       $("details").innerHTML = s.details.join(" · ");
     }
 
-    /* DNES */
     if (s.sensors) {
-      safeSet("temp", s.sensors.temperatureOutside != null ? `${s.sensors.temperatureOutside.toFixed(1)} °C` : "-- °C");
-      safeSet("light", s.sensors.light != null ? `${Math.round(s.sensors.light)} lx` : "-- lx");
+      safeSet("temp", `${s.sensors.temperatureOutside?.toFixed(1) ?? "--"} °C`);
+      safeSet("light", `${Math.round(s.sensors.light ?? 0)} lx`);
     }
 
     if (s.battery) {
@@ -107,14 +105,12 @@ async function loadState() {
 
     safeSet("fan", s.fan ? "ON" : "OFF");
 
-    /* GRAF – TEPLOTA */
     if (todayChart && s.memory?.today?.temperature?.length) {
       todayChart.data.labels = s.memory.today.temperature.map(p => p.t.slice(11, 16));
       todayChart.data.datasets[0].data = s.memory.today.temperature.map(p => p.v);
       todayChart.update();
     }
 
-    /* HISTORIE */
     if (historyChart && s.memory?.history?.length) {
       historyChart.data.labels = s.memory.history.map(d => d.day);
       historyChart.data.datasets[0].data = s.memory.history.map(d => d.min);
@@ -122,12 +118,10 @@ async function loadState() {
       historyChart.update();
     }
 
-    /* ENERGIE */
     if (s.power) {
       safeSet("energyIn", `${s.power.solarInW.toFixed(2)} W`);
       safeSet("energyOut", `${s.power.loadW.toFixed(2)} W`);
       safeSet("energyBalance", `${s.power.balanceWh.toFixed(3)} Wh`);
-
       const net = s.power.solarInW - s.power.loadW;
       safeSet("energyState", net > 0 ? "Nabíjí se" : net < 0 ? "Vybíjí se" : "Stabilní");
     }
@@ -145,13 +139,12 @@ async function loadState() {
       energyWeekChart.update();
     }
 
-    /* MOZEK */
     if ($("brainContent") && s.memory?.dailyPlan) {
       $("brainContent").innerHTML = `
         Režim: ${s.mode}<br>
-        Energie: ${s.memory.dailyPlan.energyStrategy}<br>
+        Strategie energie: ${s.memory.dailyPlan.energyStrategy}<br>
         Sezóna: ${s.memory.dailyPlan.seasonPhase}<br>
-        Sampling: ${s.sampling?.profile ?? "-"} (${s.sampling?.intervalMin ?? "-"} min)<br>
+        Sampling: ${s.sampling?.profile} (${s.sampling?.intervalMin} min)<br>
         Event: ${s.events?.active ?? "žádný"}
       `;
     }
