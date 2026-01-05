@@ -75,52 +75,48 @@ const energyWeekChart = new Chart($("energyWeekChart"), {
 function humanMessage(s) {
   const net = s.power.solarInW - s.power.loadW;
   const soc = s.battery.soc;
-  const isDay = s.time.isDay;
 
-  if (!isDay && soc < 0.3)
-    return "🌙 Je noc a energie rychle ubývá.";
-
-  if (!isDay)
-    return "🌙 Je noc, šetřím energii.";
-
-  if (soc < 0.25)
-    return "⚠️ Energie je kriticky nízká.";
-
-  if (soc < 0.45)
-    return "🔋 Baterie není v ideálním stavu.";
-
-  if (net > 0.3)
-    return "☀️ Slunce pomáhá, ukládám energii.";
-
-  if (net < 0)
-    return "🔄 Spotřeba převyšuje příjem.";
-
-  if (s.fan)
-    return "🌀 Aktivně chladím zařízení.";
-
+  if (!s.time.isDay && soc < 0.3) return "🌙 Je noc a energie rychle ubývá.";
+  if (!s.time.isDay) return "🌙 Je noc, šetřím energii.";
+  if (soc < 0.25) return "⚠️ Energie je kriticky nízká.";
+  if (soc < 0.45) return "🔋 Baterie není v ideálním stavu.";
+  if (net > 0.3) return "☀️ Slunce pomáhá, ukládám energii.";
+  if (net < 0) return "🔄 Spotřeba převyšuje příjem.";
+  if (s.fan) return "🌀 Aktivně chladím zařízení.";
   return "✅ Podmínky jsou stabilní.";
 }
 
 /* ================== PROČ ================== */
 function humanReason(s) {
-  const reasons = [];
   const net = s.power.solarInW - s.power.loadW;
-
+  const reasons = [];
   reasons.push(s.time.isDay ? "je den" : "je noc");
   reasons.push(`SOC baterie je ${Math.round(s.battery.soc * 100)} %`);
+  if (net > 0.1) reasons.push("příjem energie je vyšší než spotřeba");
+  else if (net < -0.1) reasons.push("spotřeba je vyšší než příjem");
+  else reasons.push("energetická bilance je vyrovnaná");
+  reasons.push(`sampling ${s.sampling.profile}`);
+  return "Protože " + reasons.join(", ") + ".";
+}
 
-  if (net > 0.1) {
-    reasons.push("příjem energie je vyšší než spotřeba");
-  } else if (net < -0.1) {
-    reasons.push("spotřeba je vyšší než příjem");
-  } else {
-    reasons.push("energetická bilance je vyrovnaná");
+/* ================== PREDIKCE ================== */
+function predictionText(s) {
+  const soc = s.battery.soc;
+  const capacityWh = 12; // modelová kapacita
+  const availableWh = soc * capacityWh;
+  const load = s.power.loadW || 0.1;
+
+  if (!s.time.isDay) {
+    const hours = availableWh / load;
+    if (hours < 4)
+      return "⚠️ Při současné spotřebě hrozí vybití ještě během noci.";
+    return `🌙 Při současné spotřebě baterie vydrží přibližně ${hours.toFixed(1)} h.`;
   }
 
-  if (s.fan) reasons.push("větrák je zapnutý");
-  reasons.push(`sampling: ${s.sampling.profile}`);
-
-  return "Protože " + reasons.join(", ") + ".";
+  const net = s.power.solarInW - s.power.loadW;
+  if (net > 0)
+    return "☀️ Denní bilance je kladná, stav baterie by se měl zlepšovat.";
+  return "⛅ Denní bilance je nejistá, sleduji další vývoj.";
 }
 
 /* ================== DATA ================== */
@@ -131,9 +127,9 @@ async function loadState() {
   safeSet("time", new Date(s.time.now).toLocaleTimeString());
   safeSet("mode", s.mode);
 
-  // 👇 HLÁŠKA + PROČ
   safeSet("message", humanMessage(s));
-  $("details").innerText = humanReason(s);
+  $("details").innerText =
+    humanReason(s) + "\n\n" + predictionText(s);
 
   /* DNES */
   safeSet("temp", `${s.sensors.temperatureOutside.toFixed(1)} °C`);
