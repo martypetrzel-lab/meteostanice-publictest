@@ -2,10 +2,11 @@ const API = "https://meteostanice-simulator-node-production.up.railway.app/state
 
 /* ================== HELPERY ================== */
 const $ = id => document.getElementById(id);
-const safeSet = (id, v) => {
+
+function safeSet(id, v) {
   const el = $(id);
   if (el) el.innerText = v;
-};
+}
 
 /* ================== ZÁLOŽKY ================== */
 const views = {
@@ -16,8 +17,13 @@ const views = {
 };
 
 function showView(name) {
-  Object.values(views).forEach(v => v && v.classList.remove("active"));
-  document.querySelectorAll("header button").forEach(b => b.classList.remove("active"));
+  Object.values(views).forEach(v => {
+    if (v) v.classList.remove("active");
+  });
+
+  document.querySelectorAll("header button").forEach(b => {
+    b.classList.remove("active");
+  });
 
   if (views[name]) views[name].classList.add("active");
 
@@ -26,17 +32,15 @@ function showView(name) {
 }
 
 /* NAVÁZÁNÍ KLIKŮ – BEZ ?. */
-const btnToday = $("btnToday");
-if (btnToday) btnToday.onclick = () => showView("today");
-
-const btnHistory = $("btnHistory");
-if (btnHistory) btnHistory.onclick = () => showView("history");
-
-const btnEnergy = $("btnEnergy");
-if (btnEnergy) btnEnergy.onclick = () => showView("energy");
-
-const btnBrain = $("btnBrain");
-if (btnBrain) btnBrain.onclick = () => showView("brain");
+[
+  ["btnToday", "today"],
+  ["btnHistory", "history"],
+  ["btnEnergy", "energy"],
+  ["btnBrain", "brain"]
+].forEach(([id, view]) => {
+  const btn = $(id);
+  if (btn) btn.onclick = () => showView(view);
+});
 
 /* ================== GRAFY ================== */
 let todayChart = null;
@@ -48,13 +52,15 @@ let lastEnergyLabel = null;
 
 function initCharts(s) {
   if (initialized || !window.Chart) return;
+  if (!s.memory || !s.memory.today) return;
 
-  const t = s.memory.today.temperature;
-  const ei = s.memory.today.energyIn;
-  const eo = s.memory.today.energyOut;
+  const t = s.memory.today.temperature || [];
+  const ei = s.memory.today.energyIn || [];
+  const eo = s.memory.today.energyOut || [];
 
-  if ($("todayChart")) {
-    todayChart = new Chart($("todayChart"), {
+  const tempCanvas = $("todayChart");
+  if (tempCanvas && t.length) {
+    todayChart = new Chart(tempCanvas, {
       type: "line",
       data: {
         labels: t.map(x => x.t),
@@ -67,11 +73,12 @@ function initCharts(s) {
       },
       options: { animation: false }
     });
-    lastTempLabel = t.at(-1)?.t;
+    lastTempLabel = t[t.length - 1].t;
   }
 
-  if ($("energyTodayChart")) {
-    energyChart = new Chart($("energyTodayChart"), {
+  const energyCanvas = $("energyTodayChart");
+  if (energyCanvas && ei.length && eo.length) {
+    energyChart = new Chart(energyCanvas, {
       type: "line",
       data: {
         labels: ei.map(x => x.t),
@@ -92,7 +99,7 @@ function initCharts(s) {
       },
       options: { animation: false }
     });
-    lastEnergyLabel = ei.at(-1)?.t;
+    lastEnergyLabel = ei[ei.length - 1].t;
   }
 
   initialized = true;
@@ -101,44 +108,81 @@ function initCharts(s) {
 /* ================== LIVE UPDATE ================== */
 async function loadState() {
   try {
-    const s = await fetch(API, { cache: "no-store" }).then(r => r.json());
+    const res = await fetch(API, { cache: "no-store" });
+    const s = await res.json();
 
+    /* HLAVIČKA */
     safeSet("time", new Date(s.time.now).toLocaleTimeString());
-    safeSet("message", s.message);
+    safeSet("message", s.message || "--");
 
-    safeSet("temp", `${s.device.temperature.toFixed(1)} °C`);
-    safeSet("battery", `${s.device.battery.voltage.toFixed(2)} V`);
-    safeSet("light", `${Math.round(s.device.light)} lx`);
-    safeSet("fan", s.device.fan ? "ON" : "OFF");
+    /* HODNOTY */
+    if (s.device) {
+      if (typeof s.device.temperature === "number") {
+        safeSet("temp", `${s.device.temperature.toFixed(1)} °C`);
+      }
 
-    safeSet("energyIn", `${s.device.power.solarInW.toFixed(2)} W`);
-    safeSet("energyOut", `${s.device.power.loadW.toFixed(2)} W`);
-    safeSet("energyBalance", `${s.device.power.balanceWh.toFixed(3)} Wh`);
-    safeSet("energyState", s.device.mode);
+      if (s.device.battery) {
+        safeSet("battery", `${s.device.battery.voltage.toFixed(2)} V`);
+      }
+
+      if (typeof s.device.light === "number") {
+        safeSet("light", `${Math.round(s.device.light)} lx`);
+      }
+
+      safeSet("fan", s.device.fan ? "ON" : "OFF");
+
+      if (s.device.power) {
+        safeSet("energyIn", `${s.device.power.solarInW.toFixed(2)} W`);
+        safeSet("energyOut", `${s.device.power.loadW.toFixed(2)} W`);
+        safeSet("energyBalance", `${s.device.power.balanceWh.toFixed(3)} Wh`);
+      }
+    }
 
     initCharts(s);
 
-    const tArr = s.memory.today.temperature;
-    if (todayChart && tArr.length) {
-      const last = tArr.at(-1);
+    /* DOPLNĚNÍ TEPLOTY */
+    if (todayChart && s.memory?.today?.temperature?.length) {
+      const arr = s.memory.today.temperature;
+      const last = arr[arr.length - 1];
+
       if (last.t !== lastTempLabel) {
         todayChart.data.labels.push(last.t);
         todayChart.data.datasets[0].data.push(last.v);
         lastTempLabel = last.t;
+
+        if (todayChart.data.labels.length > 120) {
+          todayChart.data.labels.shift();
+          todayChart.data.datasets[0].data.shift();
+        }
+
         todayChart.update();
       }
     }
 
-    const ei = s.memory.today.energyIn;
-    const eo = s.memory.today.energyOut;
-    if (energyChart && ei.length) {
-      const last = ei.at(-1);
+    /* DOPLNĚNÍ ENERGIE */
+    if (
+      energyChart &&
+      s.memory?.today?.energyIn?.length &&
+      s.memory?.today?.energyOut?.length
+    ) {
+      const ei = s.memory.today.energyIn;
+      const eo = s.memory.today.energyOut;
+
+      const last = ei[ei.length - 1];
+
       if (last.t !== lastEnergyLabel) {
         energyChart.data.labels.push(last.t);
         energyChart.data.datasets[0].data.push(last.v);
-        energyChart.data.datasets[1].data.push(eo.at(-1).v);
+        energyChart.data.datasets[1].data.push(eo[eo.length - 1].v);
+
         lastEnergyLabel = last.t;
-        👉 energyChart.update();
+
+        if (energyChart.data.labels.length > 120) {
+          energyChart.data.labels.shift();
+          energyChart.data.datasets.forEach(d => d.data.shift());
+        }
+
+        energyChart.update();
       }
     }
 
@@ -147,7 +191,9 @@ async function loadState() {
   }
 }
 
-/* START */
+/* ================== START ================== */
 showView("today");
 loadState();
+
+/* POZDĚJI ZPOMALÍME – TEĎ 1s */
 setInterval(loadState, 1000);
