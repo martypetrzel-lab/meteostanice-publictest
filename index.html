@@ -9,12 +9,12 @@
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
+    <header class="topbar glass">
       <div class="brand">
         <div class="logo">🌦️</div>
         <div class="title">
           <div class="h1">Meteostanice</div>
-          <div class="sub" id="subtitle">Dashboard /state • aktualizace…</div>
+          <div class="sub" id="subtitle">Dashboard • aktualizace…</div>
         </div>
       </div>
 
@@ -37,10 +37,9 @@
     </nav>
 
     <main class="content">
-      <!-- DNES -->
       <section class="tabpane active" id="tab-today">
         <div class="grid cards">
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">🌞 Prostředí</div>
             <div class="kv">
               <div class="k">Světlo</div><div class="v"><span id="envLight">—</span> <span class="unit">lx</span></div>
@@ -48,7 +47,7 @@
             </div>
           </div>
 
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">🔋 Energie</div>
             <div class="kv">
               <div class="k">SOC</div><div class="v"><span id="socPct">—</span> <span class="unit">%</span></div>
@@ -58,7 +57,7 @@
             <div class="hint" id="energyHint">—</div>
           </div>
 
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">🌀 Větrák</div>
             <div class="row">
               <div class="big" id="fanState">—</div>
@@ -67,7 +66,7 @@
             <div class="hint" id="fanReason">—</div>
           </div>
 
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">🧠 Mozek – rozhodnutí</div>
             <div class="brain">
               <div class="msg" id="brainMsg">—</div>
@@ -77,36 +76,34 @@
         </div>
 
         <div class="grid charts">
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">📈 Teplota dnes</div>
             <canvas id="chartTemp" height="140"></canvas>
           </div>
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">⚡ Solár vs Zátěž</div>
             <canvas id="chartPower" height="140"></canvas>
           </div>
         </div>
       </section>
 
-      <!-- HISTORIE -->
       <section class="tabpane" id="tab-history">
-        <div class="card">
+        <div class="card glass">
           <div class="card-title">📚 Historie (poslední dny)</div>
-          <div class="hint">Zobrazuje to, co backend posílá v <code>memory.days</code>. Když tam nic není, uvidíš prázdno.</div>
+          <div class="hint">Čte se z <code>memory.days</code>.</div>
           <div class="history" id="historyList"></div>
         </div>
 
-        <div class="card" style="margin-top:14px;">
+        <div class="card glass" style="margin-top:14px;">
           <div class="card-title">🗓️ Týdny</div>
-          <div class="hint">Pokud backend posílá <code>memory.weeks</code>, zobrazí se agregace.</div>
+          <div class="hint">Čte se z <code>memory.weeks</code>.</div>
           <div class="history" id="weeksList"></div>
         </div>
       </section>
 
-      <!-- ENERGIE -->
       <section class="tabpane" id="tab-energy">
         <div class="grid cards">
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">🔌 Tok energie</div>
             <div class="flow">
               <div class="flow-box">
@@ -127,32 +124,31 @@
             <div class="hint" id="flowNet">—</div>
           </div>
 
-          <div class="card">
+          <div class="card glass">
             <div class="card-title">🔮 Predikce</div>
             <div class="kv">
               <div class="k">Net</div><div class="v"><span id="predNet">—</span> <span class="unit">W</span></div>
               <div class="k">Výdrž</div><div class="v"><span id="predHours">—</span></div>
               <div class="k">Dnes solár</div><div class="v"><span id="predSolar">—</span> <span class="unit">Wh</span></div>
             </div>
-            <div class="hint">Predikce se zobrazí jen pokud backend pošle <code>prediction</code>.</div>
+            <div class="hint">Zobrazuje se jen když backend pošle <code>prediction</code>.</div>
           </div>
         </div>
       </section>
 
-      <!-- NASTAVENÍ -->
       <section class="tabpane" id="tab-settings">
-        <div class="card">
+        <div class="card glass">
           <div class="card-title">⚙️ Nastavení UI</div>
 
           <div class="settings">
             <label class="field">
               <span>Backend URL</span>
-              <input id="backendUrl" placeholder="https://tvoje-app.up.railway.app" />
+              <input id="backendUrl" placeholder="https://meteostanice-simulator-node-production.up.railway.app" />
             </label>
 
             <div class="row" style="justify-content:flex-start;">
-              <button class="btn" id="btnSaveBackend">Uložit</button>
-              <button class="btn" id="btnTestBackend">Test /health</button>
+              <button class="btn" id="btnSaveBackend" type="button">Uložit</button>
+              <button class="btn" id="btnTestBackend" type="button">Test /health</button>
               <span class="hint" id="backendStatus" style="margin:0 0 0 10px;">—</span>
             </div>
 
@@ -179,14 +175,15 @@
           <pre class="raw hidden" id="rawJson"></pre>
 
           <div class="hint" style="margin-top:14px;">
-            Tip: můžeš otevřít UI i s parametrem <code>?api=https://tvoje-app.up.railway.app</code> a uloží se to automaticky.
+            Tip: otevři UI rovnou jako
+            <code>?api=https://meteostanice-simulator-node-production.up.railway.app</code>
           </div>
         </div>
       </section>
     </main>
 
     <footer class="footer">
-      Data se čtou výhradně z <code>/state</code> (nebo z nastaveného backendu) • UI prototype • ©
+      UI prototype • data z <code>/state</code> • ©
     </footer>
   </div>
 
