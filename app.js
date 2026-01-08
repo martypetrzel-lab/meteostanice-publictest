@@ -28,19 +28,14 @@ function isGithubPages() {
 }
 
 function getApiBase() {
-  // 1) query param ?api=
   const params = new URLSearchParams(location.search);
   const qp = normalizeBaseUrl(params.get("api") || "");
   if (qp) return qp;
 
-  // 2) localStorage
   const ls = normalizeBaseUrl(localStorage.getItem("api_base") || "");
   if (ls) return ls;
 
-  // 3) auto default: když běžím na GitHub Pages, použij Railway
   if (isGithubPages()) return DEFAULT_RAILWAY;
-
-  // 4) jinak same-origin
   return "";
 }
 
@@ -60,7 +55,6 @@ function fmtTimePrague(dateObj) {
       hour12: false
     }).format(dateObj);
   } catch {
-    // fallback – pokud by Intl/timeZone nebylo k dispozici
     return dateObj.toLocaleTimeString("cs-CZ", { hour12: false });
   }
 }
@@ -164,7 +158,7 @@ function computeFallbacks(state) {
   );
 
   const solarW = safeGet(state, "device.solarInW", safeGet(state, "device.power.solarInW", null));
-  const loadW  = safeGet(state, "device.loadW",    safeGet(state, "device.power.loadW", null));
+  const loadW = safeGet(state, "device.loadW", safeGet(state, "device.power.loadW", null));
 
   return { light, temp, socPct, solarW, loadW };
 }
@@ -173,7 +167,6 @@ function render(state, ok = true) {
   const adv = els.toggleAdvanced.checked;
   const { light, temp, socPct, solarW, loadW } = computeFallbacks(state);
 
-  // --- time: real vs sim ---
   const realNow = fmtTimePrague(new Date());
   const simMs = safeGet(state, "time.now", null);
   const simNow = fmtTimeFromMsPrague(simMs);
@@ -181,13 +174,12 @@ function render(state, ok = true) {
   const baseInfo = API_BASE ? `API: ${API_BASE}` : "API: same-origin";
   els.subtitle.textContent = `Reálný čas: ${realNow} • Sim: ${simNow} • ${baseInfo}`;
 
-  // pill
   if (!ok) setPill("OFFLINE – nejde /state", "bad");
   else {
     const msg = state?.message || "OK";
     const level =
       /přehř|overheat|krit/i.test(msg) ? "bad" :
-      /šetř|risk|nízk/i.test(msg) ? "warn" : "ok";
+      /riziko|šetř|nízk/i.test(msg) ? "warn" : "ok";
     setPill(msg, level);
   }
 
@@ -200,15 +192,7 @@ function render(state, ok = true) {
   els.solarW.textContent   = adv ? fmt(Number(solarW), 3) : fmt(Number(solarW), 2);
   els.loadW.textContent    = adv ? fmt(Number(loadW), 3)  : fmt(Number(loadW), 2);
 
-  els.fanState.textContent = safeGet(state, "device.fan", false) ? "ZAPNUTÝ" : "VYPNUTÝ";
-  els.fanReason.textContent = state?.message ? `Důvod: ${state.message}` : "Důvod: —";
-
-  els.brainMsg.textContent = state?.message || "—";
-  const details = Array.isArray(state?.details) ? state.details : [];
-  els.brainDetails.innerHTML = details.slice(0, adv ? 8 : 4).map(d => `<li>${d}</li>`).join("");
-
-  // energy hint
-  const inWh  = safeGet(state, "memory.today.totals.energyInWh", null);
+  const inWh = safeGet(state, "memory.today.totals.energyInWh", null);
   const outWh = safeGet(state, "memory.today.totals.energyOutWh", null);
   if (inWh !== null && outWh !== null) {
     const bal = Number(inWh) - Number(outWh);
@@ -219,25 +203,39 @@ function render(state, ok = true) {
     els.energyHint.textContent = "Bilance dne: —";
   }
 
-  // flow
+  const fan = !!safeGet(state, "device.fan", false);
+  els.fanState.textContent = fan ? "ZAPNUTÝ" : "VYPNUTÝ";
+  els.fanReason.textContent = state?.message ? `Důvod: ${state.message}` : "Důvod: —";
+
+  els.brainMsg.textContent = state?.message || "—";
+  const details = Array.isArray(state?.details) ? state.details : [];
+  els.brainDetails.innerHTML = details.slice(0, adv ? 10 : 6).map(d => `<li>${d}</li>`).join("");
+
+  // energy flow
   els.flowSolar.textContent = adv ? fmt(Number(solarW), 3) : fmt(Number(solarW), 2);
-  els.flowSoc.textContent   = fmt(Number(socPct), 0);
-  els.flowLoad.textContent  = adv ? fmt(Number(loadW), 3)  : fmt(Number(loadW), 2);
-  els.flowNet.textContent   = `Net: ${adv ? fmt(Number(solarW) - Number(loadW), 3) : fmt(Number(solarW) - Number(loadW), 2)} W`;
+  els.flowSoc.textContent = fmt(Number(socPct), 0);
+  els.flowLoad.textContent = adv ? fmt(Number(loadW), 3) : fmt(Number(loadW), 2);
+  els.flowNet.textContent = `Net: ${adv ? fmt(Number(solarW) - Number(loadW), 3) : fmt(Number(solarW) - Number(loadW), 2)} W`;
 
   // prediction
   const pred = state?.prediction;
+
+  const hoursBattery = pred?.hoursLeftBattery ?? null;
+  const hoursNet = pred?.hoursLeft ?? null;
+
+  // Priorita: vždy ukazuj baterku, fallback na hoursLeft (starší)
+  const showHours = (hoursBattery !== null && hoursBattery !== undefined) ? hoursBattery : hoursNet;
+
   if (pred) {
-    els.predNet.textContent   = adv ? fmt(Number(pred.netW), 3) : fmt(Number(pred.netW), 2);
-    els.predSolar.textContent = fmt(Number(pred.expectedSolarWh), 2);
-    els.predHours.textContent = pred.hoursLeft === null ? "∞ (net > 0)" : `${fmt(Number(pred.hoursLeft), 2)} h`;
+    els.predNet.textContent = adv ? fmt(Number(pred.netW), 3) : fmt(Number(pred.netW), 2);
+    els.predSolar.textContent = fmt(Number(pred.expectedSolarWh), 1);
+    els.predHours.textContent = showHours === null ? "—" : `${fmt(Number(showHours), 2)} h (baterie)`;
   } else {
     els.predNet.textContent = "—";
     els.predSolar.textContent = "—";
     els.predHours.textContent = "—";
   }
 
-  // raw
   if (els.toggleRaw.checked) {
     els.rawJson.classList.remove("hidden");
     els.rawJson.textContent = JSON.stringify(state, null, 2);
@@ -247,6 +245,8 @@ function render(state, ok = true) {
 
   updateCharts(state);
 }
+
+let timer = null;
 
 async function fetchState() {
   try {
@@ -259,7 +259,6 @@ async function fetchState() {
   }
 }
 
-let timer = null;
 function restartLoop() {
   if (timer) clearInterval(timer);
   const ms = Number(els.refreshSelect.value || 1000);
