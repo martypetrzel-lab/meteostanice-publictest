@@ -1,189 +1,180 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8" />
-  <title>Meteostanice – mozek v akci</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <style>
-    :root {
-      --bg: #0b1220;
-      --card: #101a2f;
-      --text: #e6ecff;
-      --muted: #8fa2d9;
-      --accent: #4da3ff;
-      --good: #4caf50;
-      --warn: #ff9800;
-      --bad: #f44336;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu;
-      background: radial-gradient(circle at top, #14204a, #060b18);
-      color: var(--text);
-    }
-
-    header {
-      padding: 24px 32px;
-      font-size: 28px;
-      font-weight: 700;
-    }
-
-    main {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 24px;
-      padding: 0 32px 32px;
-    }
-
-    .card {
-      background: linear-gradient(180deg, #121d36, #0b1326);
-      border-radius: 16px;
-      padding: 20px;
-      box-shadow: 0 20px 40px rgba(0,0,0,.35);
-    }
-
-    .card h2 {
-      margin: 0 0 16px;
-      font-size: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .row {
-      display: flex;
-      justify-content: space-between;
-      margin: 8px 0;
-      font-size: 16px;
-    }
-
-    .label {
-      color: var(--muted);
-    }
-
-    .value {
-      font-weight: 600;
-    }
-
-    .fan-on { color: var(--warn); }
-    .fan-off { color: var(--muted); }
-
-    .verdict {
-      margin-top: 12px;
-      font-size: 15px;
-      line-height: 1.5;
-      padding: 12px;
-      border-radius: 12px;
-      background: rgba(255,255,255,0.05);
-    }
-
-    footer {
-      padding: 16px 32px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Meteostanice – Dashboard</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
-
 <body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">🌦️</div>
+        <div class="title">
+          <div class="h1">Meteostanice</div>
+          <div class="sub" id="subtitle">Dashboard /state • aktualizace…</div>
+        </div>
+      </div>
 
-<header>🌦️ Meteostanice – mozek v akci</header>
+      <div class="topbar-right">
+        <div class="pill" id="pillStatus">—</div>
+        <div class="icons">
+          <span class="icon" id="icoDay" title="Den/Noc">☀️</span>
+          <span class="icon" id="icoWifi" title="Spojení">📶</span>
+          <span class="icon" id="icoBattery" title="Baterie">🔋</span>
+          <span class="icon" id="icoFan" title="Větrák">🌀</span>
+        </div>
+      </div>
+    </header>
 
-<main>
+    <nav class="tabs">
+      <button class="tab active" data-tab="today">DNES</button>
+      <button class="tab" data-tab="history">HISTORIE</button>
+      <button class="tab" data-tab="energy">ENERGIE</button>
+      <button class="tab" data-tab="settings">NASTAVENÍ</button>
+    </nav>
 
-  <!-- PROSTŘEDÍ -->
-  <section class="card">
-    <h2>🌞 Prostředí</h2>
-    <div class="row">
-      <div class="label">Světlo</div>
-      <div class="value"><span id="light">–</span> lx</div>
-    </div>
-    <div class="row">
-      <div class="label">Teplota</div>
-      <div class="value"><span id="temp">–</span> °C</div>
-    </div>
-  </section>
+    <main class="content">
+      <!-- DNES -->
+      <section class="tabpane active" id="tab-today">
+        <div class="grid cards">
+          <div class="card">
+            <div class="card-title">🌞 Prostředí</div>
+            <div class="kv">
+              <div class="k">Světlo</div><div class="v"><span id="envLight">—</span> <span class="unit">lx</span></div>
+              <div class="k">Teplota</div><div class="v"><span id="envTemp">—</span> <span class="unit">°C</span></div>
+            </div>
+          </div>
 
-  <!-- ENERGIE -->
-  <section class="card">
-    <h2>🔋 Energie</h2>
-    <div class="row">
-      <div class="label">SOC</div>
-      <div class="value"><span id="soc">–</span> %</div>
-    </div>
-    <div class="row">
-      <div class="label">Zátěž</div>
-      <div class="value"><span id="load">–</span> W</div>
-    </div>
-  </section>
+          <div class="card">
+            <div class="card-title">🔋 Energie</div>
+            <div class="kv">
+              <div class="k">SOC</div><div class="v"><span id="socPct">—</span> <span class="unit">%</span></div>
+              <div class="k">Solár</div><div class="v"><span id="solarW">—</span> <span class="unit">W</span></div>
+              <div class="k">Zátěž</div><div class="v"><span id="loadW">—</span> <span class="unit">W</span></div>
+            </div>
+            <div class="hint" id="energyHint">—</div>
+          </div>
 
-  <!-- VĚTRÁK -->
-  <section class="card">
-    <h2>🌀 Větrák</h2>
-    <div class="row">
-      <div class="label">Stav</div>
-      <div class="value" id="fan">–</div>
-    </div>
-  </section>
+          <div class="card">
+            <div class="card-title">🌀 Větrák</div>
+            <div class="row">
+              <div class="big" id="fanState">—</div>
+              <div class="badge" id="fanBadge">AUTO</div>
+            </div>
+            <div class="hint" id="fanReason">—</div>
+          </div>
 
-  <!-- MOZEK -->
-  <section class="card">
-    <h2>🧠 Mozek – rozhodnutí</h2>
-    <div class="verdict" id="verdict">–</div>
-  </section>
+          <div class="card">
+            <div class="card-title">🧠 Mozek – rozhodnutí</div>
+            <div class="brain">
+              <div class="msg" id="brainMsg">—</div>
+              <ul class="details" id="brainDetails"></ul>
+            </div>
+          </div>
+        </div>
 
-</main>
+        <div class="grid charts">
+          <div class="card">
+            <div class="card-title">📈 Teplota dnes</div>
+            <canvas id="chartTemp" height="140"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-title">⚡ Solár vs Zátěž</div>
+            <canvas id="chartPower" height="140"></canvas>
+          </div>
+        </div>
+      </section>
 
-<footer>
-  Data jsou čtena výhradně ze <code>/state</code> • aktualizace každou 1 s
-</footer>
+      <!-- HISTORIE -->
+      <section class="tabpane" id="tab-history">
+        <div class="card">
+          <div class="card-title">📚 Historie (poslední dny)</div>
+          <div class="hint">Zobrazuje to, co backend posílá v <code>memory.days</code>. Když tam nic není, uvidíš prázdno.</div>
+          <div class="history" id="historyList"></div>
+        </div>
 
-<script>
-async function updateUI() {
-  try {
-    const res = await fetch("https://meteostanice-simulator-node-production.up.railway.app/state");
-    const state = await res.json();
+        <div class="card" style="margin-top:14px;">
+          <div class="card-title">🗓️ Týdny</div>
+          <div class="hint">Pokud backend posílá <code>memory.weeks</code>, zobrazí se agregace.</div>
+          <div class="history" id="weeksList"></div>
+        </div>
+      </section>
 
-    // Prostředí
-    document.getElementById("light").innerText =
-      state.world?.environment?.light ?? "–";
+      <!-- ENERGIE -->
+      <section class="tabpane" id="tab-energy">
+        <div class="grid cards">
+          <div class="card">
+            <div class="card-title">🔌 Tok energie</div>
+            <div class="flow">
+              <div class="flow-box">
+                <div class="flow-label">Solár</div>
+                <div class="flow-val"><span id="flowSolar">—</span> W</div>
+              </div>
+              <div class="flow-arrow">➡️</div>
+              <div class="flow-box">
+                <div class="flow-label">Baterie</div>
+                <div class="flow-val"><span id="flowSoc">—</span> %</div>
+              </div>
+              <div class="flow-arrow">➡️</div>
+              <div class="flow-box">
+                <div class="flow-label">Zátěž</div>
+                <div class="flow-val"><span id="flowLoad">—</span> W</div>
+              </div>
+            </div>
+            <div class="hint" id="flowNet">—</div>
+          </div>
 
-    document.getElementById("temp").innerText =
-      state.world?.environment?.temperature ?? "–";
+          <div class="card">
+            <div class="card-title">🔮 Predikce</div>
+            <div class="kv">
+              <div class="k">Net</div><div class="v"><span id="predNet">—</span> <span class="unit">W</span></div>
+              <div class="k">Výdrž</div><div class="v"><span id="predHours">—</span></div>
+              <div class="k">Dnes solár</div><div class="v"><span id="predSolar">—</span> <span class="unit">Wh</span></div>
+            </div>
+            <div class="hint">Predikce se zobrazí jen pokud backend pošle <code>prediction</code>.</div>
+          </div>
+        </div>
+      </section>
 
-    // Energie
-    document.getElementById("soc").innerText =
-      state.energy?.soc ?? "–";
+      <!-- NASTAVENÍ -->
+      <section class="tabpane" id="tab-settings">
+        <div class="card">
+          <div class="card-title">⚙️ Nastavení UI</div>
 
-    document.getElementById("load").innerText =
-      state.energy?.load ?? "–";
+          <div class="settings">
+            <label class="switch">
+              <input type="checkbox" id="toggleAdvanced" />
+              <span>Pokročilý režim</span>
+            </label>
 
-    // Větrák
-    const fanEl = document.getElementById("fan");
-    if (state.device?.fan) {
-      fanEl.innerText = "ZAPNUTÝ";
-      fanEl.className = "value fan-on";
-    } else {
-      fanEl.innerText = "VYPNUTÝ";
-      fanEl.className = "value fan-off";
-    }
+            <label class="field">
+              <span>Refresh interval</span>
+              <select id="refreshSelect">
+                <option value="1000">1s</option>
+                <option value="2000">2s</option>
+                <option value="5000">5s</option>
+              </select>
+            </label>
 
-    // Mozek
-    document.getElementById("verdict").innerText =
-      state.brain?.verdict ?? "–";
+            <label class="switch">
+              <input type="checkbox" id="toggleRaw" />
+              <span>Zobrazit RAW JSON</span>
+            </label>
+          </div>
 
-  } catch (e) {
-    console.error("STATE ERROR", e);
-  }
-}
+          <pre class="raw hidden" id="rawJson"></pre>
+        </div>
+      </section>
+    </main>
 
-setInterval(updateUI, 1000);
-updateUI();
-</script>
+    <footer class="footer">
+      Data se čtou výhradně z <code>/state</code> • UI prototype • ©
+    </footer>
+  </div>
 
+  <script src="/app.js"></script>
 </body>
 </html>
