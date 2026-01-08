@@ -145,6 +145,17 @@
           <div class="card-title">⚙️ Nastavení UI</div>
 
           <div class="settings">
+            <label class="field">
+              <span>Backend URL</span>
+              <input id="backendUrl" placeholder="https://tvoje-app.up.railway.app" />
+            </label>
+
+            <div class="row" style="justify-content:flex-start;">
+              <button class="btn" id="btnSaveBackend">Uložit</button>
+              <button class="btn" id="btnTestBackend">Test /health</button>
+              <span class="hint" id="backendStatus" style="margin:0 0 0 10px;">—</span>
+            </div>
+
             <label class="switch">
               <input type="checkbox" id="toggleAdvanced" />
               <span>Pokročilý režim</span>
@@ -166,12 +177,16 @@
           </div>
 
           <pre class="raw hidden" id="rawJson"></pre>
+
+          <div class="hint" style="margin-top:14px;">
+            Tip: můžeš otevřít UI i s parametrem <code>?api=https://tvoje-app.up.railway.app</code> a uloží se to automaticky.
+          </div>
         </div>
       </section>
     </main>
 
     <footer class="footer">
-      Data se čtou výhradně z <code>/state</code> • UI prototype • ©
+      Data se čtou výhradně z <code>/state</code> (nebo z nastaveného backendu) • UI prototype • ©
     </footer>
   </div>
 

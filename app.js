@@ -1,4 +1,4 @@
-/* UI Prototype – reads only /state */
+/* UI Prototype – reads /state from configured backend */
 
 const $ = (id) => document.getElementById(id);
 
@@ -37,6 +37,11 @@ const els = {
   predHours: $("predHours"),
   predSolar: $("predSolar"),
 
+  backendUrl: $("backendUrl"),
+  btnSaveBackend: $("btnSaveBackend"),
+  btnTestBackend: $("btnTestBackend"),
+  backendStatus: $("backendStatus"),
+
   toggleAdvanced: $("toggleAdvanced"),
   refreshSelect: $("refreshSelect"),
   toggleRaw: $("toggleRaw"),
@@ -57,50 +62,74 @@ function safeGet(obj, path, fallback = null) {
   }
 }
 
+function normalizeBaseUrl(u) {
+  if (!u) return "";
+  u = String(u).trim();
+  if (!u) return "";
+  // remove trailing slash
+  u = u.replace(/\/+$/, "");
+  return u;
+}
+
+function getApiBase() {
+  // 1) query param ?api=
+  const params = new URLSearchParams(location.search);
+  const qp = normalizeBaseUrl(params.get("api") || "");
+  if (qp) return qp;
+
+  // 2) localStorage
+  const ls = normalizeBaseUrl(localStorage.getItem("api_base") || "");
+  if (ls) return ls;
+
+  // 3) same origin fallback (works on Railway where /state exists)
+  return "";
+}
+
+let API_BASE = getApiBase();
+
+function setApiBase(newBase) {
+  API_BASE = normalizeBaseUrl(newBase);
+  if (API_BASE) localStorage.setItem("api_base", API_BASE);
+  else localStorage.removeItem("api_base");
+  els.backendUrl.value = API_BASE;
+}
+
+function apiUrl(path) {
+  // if API_BASE empty => same-origin
+  if (!API_BASE) return path;
+  return API_BASE + path;
+}
+
 function setStatusPill(state) {
-  const msg = state?.message || "—";
-  els.pillStatus.textContent = msg;
+  els.pillStatus.textContent = state?.message || "—";
 }
 
 function setIcons(state, ok) {
-  // day/night
   const isDay = !!safeGet(state, "time.isDay", true);
   els.icoDay.textContent = isDay ? "☀️" : "🌙";
 
-  // wifi (connection)
   els.icoWifi.textContent = ok ? "📶" : "❌";
 
-  // battery icon by SOC
   const socPct = safeGet(state, "device.socPct", Math.round((safeGet(state, "device.battery.soc", 0) * 100)));
   if (socPct >= 70) els.icoBattery.textContent = "🔋";
   else if (socPct >= 30) els.icoBattery.textContent = "🪫";
   else els.icoBattery.textContent = "🟥";
 
-  // fan
   const fan = !!safeGet(state, "device.fan", false);
   els.icoFan.textContent = fan ? "🌀" : "💤";
 }
 
 function computeFallbacks(state) {
-  // fallback for env
   const light = safeGet(state, "world.environment.light", safeGet(state, "device.light", null));
   const temp = safeGet(state, "world.environment.temperature", safeGet(state, "device.temperature", null));
 
-  // fallback for energy
   const socPct =
     safeGet(state, "device.socPct",
       Math.round((safeGet(state, "device.battery.soc", null) ?? 0) * 100)
     );
 
-  const solarW =
-    safeGet(state, "device.solarInW",
-      safeGet(state, "device.power.solarInW", null)
-    );
-
-  const loadW =
-    safeGet(state, "device.loadW",
-      safeGet(state, "device.power.loadW", null)
-    );
+  const solarW = safeGet(state, "device.solarInW", safeGet(state, "device.power.solarInW", null));
+  const loadW = safeGet(state, "device.loadW", safeGet(state, "device.power.loadW", null));
 
   return { light, temp, socPct, solarW, loadW };
 }
@@ -114,59 +143,34 @@ function ensureCharts() {
     tempChart = new Chart(ctx, {
       type: "line",
       data: { labels: [], datasets: [{ label: "Teplota (°C)", data: [] }] },
-      options: {
-        responsive: true,
-        animation: false,
-        scales: {
-          x: { ticks: { maxTicksLimit: 8 } },
-          y: { ticks: { maxTicksLimit: 6 } }
-        }
-      }
+      options: { responsive: true, animation: false, scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { ticks: { maxTicksLimit: 6 } } } }
     });
   }
-
   if (!powerChart) {
     const ctx = $("chartPower").getContext("2d");
     powerChart = new Chart(ctx, {
       type: "line",
-      data: {
-        labels: [],
-        datasets: [
-          { label: "Solár (W)", data: [] },
-          { label: "Zátěž (W)", data: [] }
-        ]
-      },
-      options: {
-        responsive: true,
-        animation: false,
-        scales: {
-          x: { ticks: { maxTicksLimit: 8 } },
-          y: { ticks: { maxTicksLimit: 6 } }
-        }
-      }
+      data: { labels: [], datasets: [{ label: "Solár (W)", data: [] }, { label: "Zátěž (W)", data: [] }] },
+      options: { responsive: true, animation: false, scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { ticks: { maxTicksLimit: 6 } } } }
     });
   }
 }
 
 function updateCharts(state) {
   ensureCharts();
-
   const memT = safeGet(state, "memory.today.temperature", []);
   const memIn = safeGet(state, "memory.today.energyIn", []);
   const memOut = safeGet(state, "memory.today.energyOut", []);
 
-  // Use last N points to keep it fast
   const N = 240;
   const tSlice = memT.slice(-N);
   const inSlice = memIn.slice(-N);
   const outSlice = memOut.slice(-N);
 
-  // temp
   tempChart.data.labels = tSlice.map(p => p.t);
   tempChart.data.datasets[0].data = tSlice.map(p => p.v);
   tempChart.update();
 
-  // power
   powerChart.data.labels = inSlice.map(p => p.t);
   powerChart.data.datasets[0].data = inSlice.map(p => p.v);
   powerChart.data.datasets[1].data = outSlice.map(p => p.v);
@@ -181,8 +185,7 @@ function setupTabs() {
       document.querySelectorAll(".tabpane").forEach(p => p.classList.remove("active"));
 
       btn.classList.add("active");
-      const key = btn.dataset.tab;
-      $("tab-" + key).classList.add("active");
+      $("tab-" + btn.dataset.tab).classList.add("active");
     });
   });
 }
@@ -190,10 +193,10 @@ function setupTabs() {
 /* -------- Rendering -------- */
 function render(state, ok = true) {
   const adv = els.toggleAdvanced.checked;
-
   const { light, temp, socPct, solarW, loadW } = computeFallbacks(state);
 
-  els.subtitle.textContent = `Dashboard /state • aktualizace ${ok ? "OK" : "chyba"} • ${new Date().toLocaleTimeString()}`;
+  const baseInfo = API_BASE ? `API: ${API_BASE}` : "API: same-origin";
+  els.subtitle.textContent = `Dashboard • ${baseInfo} • ${ok ? "OK" : "chyba"} • ${new Date().toLocaleTimeString()}`;
 
   setStatusPill(state);
   setIcons(state, ok);
@@ -205,7 +208,6 @@ function render(state, ok = true) {
   els.solarW.textContent = adv ? fmt(Number(solarW), 3) : fmt(Number(solarW), 2);
   els.loadW.textContent = adv ? fmt(Number(loadW), 3) : fmt(Number(loadW), 2);
 
-  // energy hint (today totals if exist)
   const inWh = safeGet(state, "memory.today.totals.energyInWh", null);
   const outWh = safeGet(state, "memory.today.totals.energyOutWh", null);
   if (inWh !== null && outWh !== null) {
@@ -217,24 +219,20 @@ function render(state, ok = true) {
     els.energyHint.textContent = "Bilance dne: —";
   }
 
-  // fan
   const fan = !!safeGet(state, "device.fan", false);
   els.fanState.textContent = fan ? "ZAPNUTÝ" : "VYPNUTÝ";
   els.fanReason.textContent = state?.message ? `Důvod: ${state.message}` : "Důvod: —";
 
-  // brain
   els.brainMsg.textContent = state?.message || "—";
   const details = Array.isArray(state?.details) ? state.details : [];
   els.brainDetails.innerHTML = details.slice(0, adv ? 8 : 4).map(d => `<li>${d}</li>`).join("");
 
-  // energy tab flow
   els.flowSolar.textContent = adv ? fmt(Number(solarW), 3) : fmt(Number(solarW), 2);
   els.flowSoc.textContent = fmt(Number(socPct), 0);
   els.flowLoad.textContent = adv ? fmt(Number(loadW), 3) : fmt(Number(loadW), 2);
   const netW = (Number(solarW) - Number(loadW));
   els.flowNet.textContent = `Net: ${adv ? fmt(netW, 3) : fmt(netW, 2)} W`;
 
-  // prediction (if exists)
   const pred = state?.prediction;
   if (pred) {
     els.predNet.textContent = adv ? fmt(Number(pred.netW), 3) : fmt(Number(pred.netW), 2);
@@ -246,7 +244,6 @@ function render(state, ok = true) {
     els.predHours.textContent = "—";
   }
 
-  // history list
   const days = safeGet(state, "memory.days", []);
   els.historyList.innerHTML = (days && days.length)
     ? days.slice(-14).reverse().map(d => {
@@ -266,8 +263,7 @@ function render(state, ok = true) {
             ? `T: ${fmt(Number(minT),1)} / ${fmt(Number(maxT),1)} • avg ${fmt(Number(avgT),1)}`
             : `vzorků: ${(d.temperature || []).length}`;
 
-        const right =
-          bal !== null ? `Bilance: ${fmt(bal, 2)} Wh` : "—";
+        const right = bal !== null ? `Bilance: ${fmt(bal, 2)} Wh` : "—";
 
         return `
           <div class="rowitem">
@@ -281,7 +277,6 @@ function render(state, ok = true) {
       }).join("")
     : `<div class="hint">Zatím žádná historie (memory.days je prázdné).</div>`;
 
-  // weeks list
   const weeks = safeGet(state, "memory.weeks", []);
   els.weeksList.innerHTML = (weeks && weeks.length)
     ? weeks.slice(-12).reverse().map(w => {
@@ -306,10 +301,8 @@ function render(state, ok = true) {
       }).join("")
     : `<div class="hint">Týdny nejsou k dispozici (memory.weeks chybí nebo je prázdné).</div>`;
 
-  // charts
   updateCharts(state);
 
-  // raw json
   if (els.toggleRaw.checked) {
     els.rawJson.classList.remove("hidden");
     els.rawJson.textContent = JSON.stringify(state, null, 2);
@@ -323,7 +316,7 @@ let timer = null;
 
 async function fetchState() {
   try {
-    const r = await fetch("/state", { cache: "no-store" });
+    const r = await fetch(apiUrl("/state"), { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const state = await r.json();
     render(state, true);
@@ -348,6 +341,9 @@ function loadSettings() {
   els.toggleAdvanced.checked = adv;
   els.toggleRaw.checked = raw;
   els.refreshSelect.value = ms;
+
+  // api base
+  setApiBase(getApiBase());
 }
 
 function bindSettings() {
@@ -362,6 +358,27 @@ function bindSettings() {
   els.refreshSelect.addEventListener("change", () => {
     localStorage.setItem("ui_refresh", String(els.refreshSelect.value));
     restartLoop();
+  });
+
+  els.btnSaveBackend.addEventListener("click", () => {
+    const v = normalizeBaseUrl(els.backendUrl.value);
+    setApiBase(v);
+    els.backendStatus.textContent = API_BASE ? `Uloženo: ${API_BASE}` : "Uloženo: same-origin";
+    restartLoop();
+  });
+
+  els.btnTestBackend.addEventListener("click", async () => {
+    const base = normalizeBaseUrl(els.backendUrl.value);
+    const url = (base ? base : "") + "/health";
+    els.backendStatus.textContent = "Testuji…";
+    try {
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      els.backendStatus.textContent = `OK: ${j.version || "health"} • persistent=${j.persistent ?? "?"}`;
+    } catch {
+      els.backendStatus.textContent = "Chyba: nejde /health (URL nebo CORS)";
+    }
   });
 }
 
