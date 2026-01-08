@@ -47,6 +47,29 @@ function getApiBase() {
 let API_BASE = "";
 let els = null;
 
+// --- Time formatting (real vs simulated) ---
+const PRAGUE_TZ = "Europe/Prague";
+
+function fmtTimePrague(dateObj) {
+  try {
+    return new Intl.DateTimeFormat("cs-CZ", {
+      timeZone: PRAGUE_TZ,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(dateObj);
+  } catch {
+    // fallback – pokud by Intl/timeZone nebylo k dispozici
+    return dateObj.toLocaleTimeString("cs-CZ", { hour12: false });
+  }
+}
+
+function fmtTimeFromMsPrague(ms) {
+  if (ms === null || ms === undefined || Number.isNaN(ms)) return "—";
+  return fmtTimePrague(new Date(Number(ms)));
+}
+
 // --- Chart.js guarded ---
 let tempChart = null;
 let powerChart = null;
@@ -150,8 +173,13 @@ function render(state, ok = true) {
   const adv = els.toggleAdvanced.checked;
   const { light, temp, socPct, solarW, loadW } = computeFallbacks(state);
 
+  // --- time: real vs sim ---
+  const realNow = fmtTimePrague(new Date());
+  const simMs = safeGet(state, "time.now", null);
+  const simNow = fmtTimeFromMsPrague(simMs);
+
   const baseInfo = API_BASE ? `API: ${API_BASE}` : "API: same-origin";
-  els.subtitle.textContent = `Dashboard • ${baseInfo} • ${ok ? "OK" : "chyba"} • ${new Date().toLocaleTimeString()}`;
+  els.subtitle.textContent = `Reálný čas: ${realNow} • Sim: ${simNow} • ${baseInfo}`;
 
   // pill
   if (!ok) setPill("OFFLINE – nejde /state", "bad");
@@ -208,33 +236,6 @@ function render(state, ok = true) {
     els.predSolar.textContent = "—";
     els.predHours.textContent = "—";
   }
-
-  // history (simple)
-  const days = safeGet(state, "memory.days", []);
-  els.historyList.innerHTML = (days && days.length)
-    ? days.slice(-14).reverse().map(d => `
-        <div class="rowitem">
-          <div class="left">
-            <div class="date">${d.key || "—"}</div>
-            <div class="meta">vzorků: ${(d.temperature || []).length}</div>
-          </div>
-          <div class="right">—</div>
-        </div>
-      `).join("")
-    : `<div class="hint">Zatím žádná historie.</div>`;
-
-  const weeks = safeGet(state, "memory.weeks", []);
-  els.weeksList.innerHTML = (weeks && weeks.length)
-    ? weeks.slice(-12).reverse().map(w => `
-        <div class="rowitem">
-          <div class="left">
-            <div class="date">${w.key || "—"}</div>
-            <div class="meta">T: ${fmt(Number(w.minT ?? 0),1)} / ${fmt(Number(w.maxT ?? 0),1)}</div>
-          </div>
-          <div class="right">—</div>
-        </div>
-      `).join("")
-    : `<div class="hint">Týdny nejsou k dispozici.</div>`;
 
   // raw
   if (els.toggleRaw.checked) {
@@ -344,9 +345,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     brainMsg: $("brainMsg"),
     brainDetails: $("brainDetails"),
-
-    historyList: $("historyList"),
-    weeksList: $("weeksList"),
 
     flowSolar: $("flowSolar"),
     flowSoc: $("flowSoc"),
