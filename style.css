@@ -12,8 +12,6 @@
   --shadow: 0 16px 48px rgba(0,0,0,.45);
   --radius: 20px;
 
-  --accent: rgba(110,168,255,.55);
-  --accent2: rgba(110,168,255,.20);
   --good: rgba(46, 204, 113, .9);
   --warn: rgba(241, 196, 15, .95);
   --bad:  rgba(255, 92, 122, .95);
@@ -131,9 +129,8 @@ a{color:#cfe0ff}
   .grid.charts{grid-template-columns: 1fr;}
 }
 
-.card{
-  padding:14px 14px 12px;
-}
+.card{ padding:14px 14px 12px; }
+
 .card-title{
   font-weight:900;
   letter-spacing:.2px;
@@ -230,11 +227,11 @@ select, input{
   padding:10px 12px;
   outline: none;
 }
-input{
-  width: 560px;
-  max-width: 100%;
+input{ width: 560px; max-width: 100%; }
+select:focus, input:focus{
+  border-color: rgba(110,168,255,.45);
+  box-shadow: 0 0 0 4px rgba(110,168,255,.10);
 }
-select:focus, input:focus{border-color: rgba(110,168,255,.45); box-shadow: 0 0 0 4px rgba(110,168,255,.10);}
 
 .btn{
   border:1px solid var(--stroke);
@@ -246,7 +243,11 @@ select:focus, input:focus{border-color: rgba(110,168,255,.45); box-shadow: 0 0 0
   font-weight:950;
   transition: transform .08s ease, border-color .15s ease, background .15s ease;
 }
-.btn:hover{transform: translateY(-1px); border-color: var(--stroke2); background: rgba(255,255,255,.08);}
+.btn:hover{
+  transform: translateY(-1px);
+  border-color: var(--stroke2);
+  background: rgba(255,255,255,.08);
+}
 
 .raw{
   margin-top:12px;

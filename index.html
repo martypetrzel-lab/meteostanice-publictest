@@ -90,13 +90,11 @@
       <section class="tabpane" id="tab-history">
         <div class="card glass">
           <div class="card-title">📚 Historie (poslední dny)</div>
-          <div class="hint">Čte se z <code>memory.days</code>.</div>
           <div class="history" id="historyList"></div>
         </div>
 
         <div class="card glass" style="margin-top:14px;">
           <div class="card-title">🗓️ Týdny</div>
-          <div class="hint">Čte se z <code>memory.weeks</code>.</div>
           <div class="history" id="weeksList"></div>
         </div>
       </section>
@@ -131,7 +129,6 @@
               <div class="k">Výdrž</div><div class="v"><span id="predHours">—</span></div>
               <div class="k">Dnes solár</div><div class="v"><span id="predSolar">—</span> <span class="unit">Wh</span></div>
             </div>
-            <div class="hint">Zobrazuje se jen když backend pošle <code>prediction</code>.</div>
           </div>
         </div>
       </section>
@@ -173,17 +170,12 @@
           </div>
 
           <pre class="raw hidden" id="rawJson"></pre>
-
-          <div class="hint" style="margin-top:14px;">
-            Tip: otevři UI rovnou jako
-            <code>?api=https://meteostanice-simulator-node-production.up.railway.app</code>
-          </div>
         </div>
       </section>
     </main>
 
     <footer class="footer">
-      UI prototype • data z <code>/state</code> • ©
+      UI prototype • data z /state • ©
     </footer>
   </div>
 
