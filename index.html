@@ -4,17 +4,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Meteostanice – Dashboard</title>
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="app">
+
     <header class="topbar glass">
       <div class="brand">
         <div class="logo">🌦️</div>
         <div class="title">
           <div class="h1">Meteostanice</div>
-          <div class="sub" id="subtitle">Dashboard • aktualizace…</div>
+          <div class="sub" id="subtitle">Dashboard • načítám…</div>
         </div>
       </div>
 
@@ -30,13 +31,15 @@
     </header>
 
     <nav class="tabs">
-      <button class="tab active" data-tab="today">DNES</button>
-      <button class="tab" data-tab="history">HISTORIE</button>
-      <button class="tab" data-tab="energy">ENERGIE</button>
-      <button class="tab" data-tab="settings">NASTAVENÍ</button>
+      <button class="tab active" data-tab="today" type="button">DNES</button>
+      <button class="tab" data-tab="history" type="button">HISTORIE</button>
+      <button class="tab" data-tab="energy" type="button">ENERGIE</button>
+      <button class="tab" data-tab="settings" type="button">NASTAVENÍ</button>
     </nav>
 
     <main class="content">
+
+      <!-- DNES -->
       <section class="tabpane active" id="tab-today">
         <div class="grid cards">
           <div class="card glass">
@@ -79,14 +82,18 @@
           <div class="card glass">
             <div class="card-title">📈 Teplota dnes</div>
             <canvas id="chartTemp" height="140"></canvas>
+            <div class="hint" id="chartHintTemp"></div>
           </div>
+
           <div class="card glass">
             <div class="card-title">⚡ Solár vs Zátěž</div>
             <canvas id="chartPower" height="140"></canvas>
+            <div class="hint" id="chartHintPower"></div>
           </div>
         </div>
       </section>
 
+      <!-- HISTORIE -->
       <section class="tabpane" id="tab-history">
         <div class="card glass">
           <div class="card-title">📚 Historie (poslední dny)</div>
@@ -99,6 +106,7 @@
         </div>
       </section>
 
+      <!-- ENERGIE -->
       <section class="tabpane" id="tab-energy">
         <div class="grid cards">
           <div class="card glass">
@@ -129,10 +137,12 @@
               <div class="k">Výdrž</div><div class="v"><span id="predHours">—</span></div>
               <div class="k">Dnes solár</div><div class="v"><span id="predSolar">—</span> <span class="unit">Wh</span></div>
             </div>
+            <div class="hint">Zobrazuje se jen když backend posílá <code>prediction</code>.</div>
           </div>
         </div>
       </section>
 
+      <!-- NASTAVENÍ -->
       <section class="tabpane" id="tab-settings">
         <div class="card glass">
           <div class="card-title">⚙️ Nastavení UI</div>
@@ -170,15 +180,21 @@
           </div>
 
           <pre class="raw hidden" id="rawJson"></pre>
+
+          <div class="hint" style="margin-top:14px;">
+            Tip: GitHub Pages automaticky použije tvůj Railway backend. Když chceš přepnout, napiš ho sem.
+          </div>
         </div>
       </section>
+
     </main>
 
     <footer class="footer">
       UI prototype • data z /state • ©
     </footer>
+
   </div>
 
-  <script src="/app.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
