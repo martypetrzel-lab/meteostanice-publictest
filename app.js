@@ -1,375 +1,336 @@
-/* UI Prototype – reads /state from configured backend */
+const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
-const DEFAULT_RAILWAY = "https://meteostanice-simulator-node-production.up.railway.app";
+const el = (id) => document.getElementById(id);
+const fmt1 = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : "—");
+const fmt0 = (x) => (Number.isFinite(x) ? Math.round(x) : "—");
 
-function $(id){ return document.getElementById(id); }
-
-function fmt(v, digits = 0) {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  if (typeof v !== "number") return String(v);
-  return v.toFixed(digits);
+function getBackend() {
+  const saved = localStorage.getItem("backendUrl");
+  return (saved && saved.trim()) ? saved.trim().replace(/\/+$/, "") : DEFAULT_BACKEND;
 }
 
-function safeGet(obj, path, fallback = null) {
-  try {
-    return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback;
-  } catch {
-    return fallback;
-  }
+function setBackend(url) {
+  localStorage.setItem("backendUrl", url.trim().replace(/\/+$/, ""));
 }
 
-function normalizeBaseUrl(u) {
-  if (!u) return "";
-  return String(u).trim().replace(/\/+$/, "");
+function riskClass(r) {
+  if (r >= 70) return "bad";
+  if (r >= 45) return "warn";
+  return "ok";
 }
 
-function isGithubPages() {
-  return /github\.io$/i.test(location.hostname);
+function setChip(container, text, cls) {
+  const d = document.createElement("span");
+  d.className = `chip ${cls || ""}`.trim();
+  d.textContent = text;
+  container.appendChild(d);
 }
 
-function getApiBase() {
-  const params = new URLSearchParams(location.search);
-  const qp = normalizeBaseUrl(params.get("api") || "");
-  if (qp) return qp;
-
-  const ls = normalizeBaseUrl(localStorage.getItem("api_base") || "");
-  if (ls) return ls;
-
-  if (isGithubPages()) return DEFAULT_RAILWAY;
-  return "";
+function toHHMM(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
-let API_BASE = "";
-let els = null;
+function pushRiskPoint(risk) {
+  const key = "riskSeries";
+  const now = Date.now();
+  const keepMs = 2 * 60 * 60 * 1000; // ~2h
+  let arr = [];
+  try { arr = JSON.parse(localStorage.getItem(key) || "[]"); } catch { arr = []; }
+  arr.push({ t: now, r: risk });
 
-// --- Time formatting (real vs simulated) ---
-const PRAGUE_TZ = "Europe/Prague";
+  // prune
+  arr = arr.filter(p => (now - p.t) <= keepMs);
 
-function fmtTimePrague(dateObj) {
-  try {
-    return new Intl.DateTimeFormat("cs-CZ", {
-      timeZone: PRAGUE_TZ,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false
-    }).format(dateObj);
-  } catch {
-    return dateObj.toLocaleTimeString("cs-CZ", { hour12: false });
-  }
-}
-
-function fmtTimeFromMsPrague(ms) {
-  if (ms === null || ms === undefined || Number.isNaN(ms)) return "—";
-  return fmtTimePrague(new Date(Number(ms)));
-}
-
-// --- Chart.js guarded ---
-let tempChart = null;
-let powerChart = null;
-
-function ensureCharts() {
-  if (typeof Chart === "undefined") {
-    if (els?.chartHintTemp) els.chartHintTemp.textContent = "Grafy: Chart.js se nenačetl (CDN). UI běží dál.";
-    if (els?.chartHintPower) els.chartHintPower.textContent = "Grafy: Chart.js se nenačetl (CDN). UI běží dál.";
-    return;
+  // de-dup (max 1 point per ~10s)
+  const out = [];
+  for (const p of arr) {
+    const last = out[out.length - 1];
+    if (!last || (p.t - last.t) >= 10_000) out.push(p);
   }
 
-  if (!tempChart && $("chartTemp")) {
-    tempChart = new Chart($("chartTemp").getContext("2d"), {
-      type: "line",
-      data: { labels: [], datasets: [{ label: "Teplota (°C)", data: [] }] },
-      options: { responsive: true, animation: false }
-    });
-    if (els?.chartHintTemp) els.chartHintTemp.textContent = "";
+  localStorage.setItem(key, JSON.stringify(out));
+  return out;
+}
+
+function drawRisk(canvas, series) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // clear
+  ctx.clearRect(0, 0, w, h);
+
+  // grid
+  ctx.globalAlpha = 0.25;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < 5; i++) {
+    const y = (h * i) / 5;
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+  }
+  ctx.strokeStyle = "#ffffff";
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  if (!series || series.length < 2) return;
+
+  const t0 = series[0].t;
+  const t1 = series[series.length - 1].t;
+  const dt = Math.max(1, t1 - t0);
+
+  const xOf = (t) => ((t - t0) / dt) * (w - 20) + 10;
+  const yOf = (r) => (h - 18) - (clamp(r, 0, 100) / 100) * (h - 26);
+
+  // line
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#7cc0ff";
+  ctx.beginPath();
+  ctx.moveTo(xOf(series[0].t), yOf(series[0].r));
+  for (let i = 1; i < series.length; i++) ctx.lineTo(xOf(series[i].t), yOf(series[i].r));
+  ctx.stroke();
+
+  // last point
+  const last = series[series.length - 1];
+  ctx.fillStyle = "#53e3a6";
+  ctx.beginPath();
+  ctx.arc(xOf(last.t), yOf(last.r), 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+function setModeBadge(badgeEl, mode, risk) {
+  badgeEl.textContent = mode || "—";
+  const cls = riskClass(risk);
+  badgeEl.style.borderColor =
+    cls === "bad" ? "rgba(255,92,124,.45)" :
+    cls === "warn" ? "rgba(255,209,102,.45)" :
+    "rgba(83,227,166,.45)";
+  badgeEl.style.background =
+    cls === "bad" ? "rgba(255,92,124,.10)" :
+    cls === "warn" ? "rgba(255,209,102,.10)" :
+    "rgba(83,227,166,.10)";
+}
+
+function render(state) {
+  // header links
+  const backend = getBackend();
+  el("stateLink").href = `${backend}/state`;
+
+  // env basics
+  const w = state?.world?.environment || {};
+  const env = w;
+  const light = env.light ?? state?.environment?.light;
+  const temp = env.airTempC ?? env.temperature ?? state?.environment?.temperature;
+  const hum = env.humidity ?? state?.environment?.humidity;
+
+  el("uiLight").textContent = fmt0(light);
+  el("uiTemp").textContent = fmt1(temp);
+  el("uiHum").textContent = fmt0(hum);
+
+  // energy
+  const soc = state?.brain?.battery?.socPercent ?? state?.device?.battery?.soc ?? state?.device?.battery ?? null;
+  const solar = state?.device?.power?.solarInW ?? env.solarPotentialW ?? null;
+  const load = state?.device?.power?.loadW ?? null;
+  const fan = state?.device?.fan;
+
+  el("uiSoc").textContent = (soc === null || soc === undefined) ? "—" : fmt0(Number(soc));
+  el("uiSolar").textContent = fmt1(Number(solar));
+  el("uiLoad").textContent = fmt1(Number(load));
+  el("uiFan").textContent = (fan === true) ? "ON" : (fan === false) ? "OFF" : "—";
+
+  el("uiSolar2").textContent = fmt1(Number(solar));
+  el("uiSoc2").textContent = (soc === null || soc === undefined) ? "—" : fmt0(Number(soc));
+  el("uiLoad2").textContent = fmt1(Number(load));
+
+  // message
+  el("uiMsg").textContent = state?.message || "—";
+  const det = Array.isArray(state?.details) ? state.details.join(" • ") : (state?.details || "—");
+  el("uiDetails").textContent = det || "—";
+
+  // weather chips
+  const wc = el("uiWeatherChips");
+  wc.innerHTML = "";
+  if (env.summary?.sky) setChip(wc, env.summary.sky, "ok");
+  if (env.summary?.precip) setChip(wc, env.summary.precip, env.raining || env.snowing ? "warn" : "ok");
+  if (env.summary?.wind) setChip(wc, `vítr: ${env.summary.wind}`, (env.windMs >= 12) ? "warn" : "ok");
+  if (env.thunder) setChip(wc, "bouřka", "bad");
+  if (env.events?.fog) setChip(wc, "mlha", "warn");
+  if (env.events?.gust) setChip(wc, "nárazy", "warn");
+
+  // brain
+  const brain = state?.brain || {};
+  const risk = Number.isFinite(brain?.risk) ? brain.risk : null;
+  const mode = brain?.mode || "—";
+  el("uiRisk").textContent = (risk === null) ? "—" : String(risk);
+
+  // bar
+  const rf = el("uiRiskBar");
+  rf.style.width = `${clamp(risk ?? 0, 0, 100)}%`;
+  const rc = riskClass(risk ?? 0);
+  rf.style.background =
+    rc === "bad" ? "linear-gradient(90deg, rgba(255,92,124,.95), rgba(255,209,102,.65))" :
+    rc === "warn" ? "linear-gradient(90deg, rgba(255,209,102,.95), rgba(124,192,255,.65))" :
+    "linear-gradient(90deg, rgba(83,227,166,.95), rgba(124,192,255,.75))";
+
+  setModeBadge(el("uiModeBadge"), mode, risk ?? 0);
+
+  // battery hours
+  const bh = brain?.battery?.hours;
+  el("uiBatHours").textContent = (bh === null || bh === undefined) ? "—" : fmt1(Number(bh));
+  el("uiBatHours2").textContent = (bh === null || bh === undefined) ? "—" : fmt1(Number(bh));
+  el("uiBatHint").textContent =
+    (soc === null || soc === undefined) ? "—" : `SOC ${fmt0(Number(soc))} %`;
+
+  // sun info
+  const sun = env.sun || {};
+  const sunset = sun.sunsetTs ? toHHMM(sun.sunsetTs) : null;
+  const sunrise = sun.sunriseTs ? toHHMM(sun.sunriseTs) : null;
+  const dayMin = Number.isFinite(sun.daylightMin) ? sun.daylightMin : null;
+
+  const hToSunset = brain?.time?.hoursToSunset;
+  const hToSunrise = brain?.time?.hoursToSunrise;
+
+  el("uiSunLine").textContent =
+    (sunrise && sunset) ? `🌅 ${sunrise}  •  🌇 ${sunset}` : "—";
+
+  const sunBits = [];
+  if (Number.isFinite(hToSunset)) sunBits.push(`do západu ${fmt1(hToSunset)} h`);
+  if (Number.isFinite(hToSunrise)) sunBits.push(`do východu ${fmt1(hToSunrise)} h`);
+  if (dayMin !== null) sunBits.push(`den ${fmt0(dayMin)} min`);
+  el("uiSunHint").textContent = sunBits.length ? sunBits.join(" • ") : "—";
+
+  // brain chips (events + special warnings)
+  const bc = el("uiBrainChips");
+  bc.innerHTML = "";
+  if (risk !== null) setChip(bc, `riziko ${risk}/100`, riskClass(risk));
+  if (brain?.sampling) setChip(bc, `sampling: ${brain.sampling}`, (brain.sampling === "LOW") ? "warn" : "ok");
+  if (brain?.solar?.untilSunsetWh !== null && brain?.solar?.untilSunsetWh !== undefined) {
+    setChip(bc, `do západu ~${fmt1(Number(brain.solar.untilSunsetWh))} Wh`, "ok");
+  }
+  if (env.boxTempC !== undefined) {
+    const bt = Number(env.boxTempC);
+    setChip(bc, `box ${fmt1(bt)} °C`, (bt >= 45 || bt <= -10) ? "warn" : "ok");
+  }
+  if (env.thunder) setChip(bc, "bouřka", "bad");
+  if (env.events?.storm) setChip(bc, "storm event", "bad");
+  if (env.events?.gust) setChip(bc, "nárazy větru", "warn");
+  if (env.events?.fog) setChip(bc, "mlha", "warn");
+  if (env.snowing) setChip(bc, "sněžení", "warn");
+
+  // risk trend
+  if (risk !== null) {
+    const series = pushRiskPoint(risk);
+    const canvas = el("riskCanvas");
+    drawRisk(canvas, series);
   }
 
-  if (!powerChart && $("chartPower")) {
-    powerChart = new Chart($("chartPower").getContext("2d"), {
-      type: "line",
-      data: { labels: [], datasets: [{ label: "Solár (W)", data: [] }, { label: "Zátěž (W)", data: [] }] },
-      options: { responsive: true, animation: false }
-    });
-    if (els?.chartHintPower) els.chartHintPower.textContent = "";
-  }
+  // energy prediction placeholders (if backend has prediction)
+  const pred = state?.prediction || null;
+  el("uiNet").textContent = pred?.netW !== undefined ? fmt1(Number(pred.netW)) : "—";
+  el("uiTodaySolarWh").textContent = pred?.todaySolarWh !== undefined ? fmt0(Number(pred.todaySolarWh)) : "—";
+
+  // history dumps (simple debug)
+  el("uiHistory").textContent = JSON.stringify(state?.memory?.days ?? [], null, 2);
+  el("uiWeeks").textContent = JSON.stringify(state?.memory?.weeks ?? [], null, 2);
+
+  // status
+  el("statusText").textContent = "Dashboard • OK";
 }
 
-function updateCharts(state) {
-  ensureCharts();
-  if (!tempChart || !powerChart) return;
+async function fetchState() {
+  const backend = getBackend();
+  const url = `${backend}/state`;
 
-  const memT = safeGet(state, "memory.today.temperature", []);
-  const memIn = safeGet(state, "memory.today.energyIn", []);
-  const memOut = safeGet(state, "memory.today.energyOut", []);
-
-  const N = 240;
-  const tSlice = memT.slice(-N);
-  const inSlice = memIn.slice(-N);
-  const outSlice = memOut.slice(-N);
-
-  tempChart.data.labels = tSlice.map(p => p.t);
-  tempChart.data.datasets[0].data = tSlice.map(p => p.v);
-  tempChart.update();
-
-  powerChart.data.labels = inSlice.map(p => p.t);
-  powerChart.data.datasets[0].data = inSlice.map(p => p.v);
-  powerChart.data.datasets[1].data = outSlice.map(p => p.v);
-  powerChart.update();
-}
-
-function apiUrl(path) {
-  return API_BASE ? (API_BASE + path) : path;
-}
-
-function setApiBase(newBase) {
-  API_BASE = normalizeBaseUrl(newBase);
-  if (API_BASE) localStorage.setItem("api_base", API_BASE);
-  else localStorage.removeItem("api_base");
-  if (els?.backendUrl) els.backendUrl.value = API_BASE;
-}
-
-function setPill(text, level) {
-  els.pillStatus.textContent = text || "—";
-  els.pillStatus.classList.remove("ok", "warn", "bad");
-  if (level) els.pillStatus.classList.add(level);
-}
-
-function setIcons(state, ok) {
-  const isDay = !!safeGet(state, "time.isDay", true);
-  els.icoDay.textContent = isDay ? "☀️" : "🌙";
-  els.icoWifi.textContent = ok ? "📶" : "❌";
-
-  const socPct = safeGet(state, "device.socPct", Math.round((safeGet(state, "device.battery.soc", 0) * 100)));
-  if (socPct >= 70) els.icoBattery.textContent = "🔋";
-  else if (socPct >= 30) els.icoBattery.textContent = "🪫";
-  else els.icoBattery.textContent = "🟥";
-
-  const fan = !!safeGet(state, "device.fan", false);
-  els.icoFan.textContent = fan ? "🌀" : "💤";
-}
-
-function computeFallbacks(state) {
-  const light = safeGet(state, "world.environment.light", safeGet(state, "device.light", null));
-  const temp = safeGet(state, "world.environment.temperature", safeGet(state, "device.temperature", null));
-
-  const socPct = safeGet(
-    state, "device.socPct",
-    Math.round((safeGet(state, "device.battery.soc", 0) * 100))
-  );
-
-  const solarW = safeGet(state, "device.solarInW", safeGet(state, "device.power.solarInW", null));
-  const loadW = safeGet(state, "device.loadW", safeGet(state, "device.power.loadW", null));
-
-  return { light, temp, socPct, solarW, loadW };
-}
-
-function render(state, ok = true) {
-  const adv = els.toggleAdvanced.checked;
-  const { light, temp, socPct, solarW, loadW } = computeFallbacks(state);
-
-  const realNow = fmtTimePrague(new Date());
-  const simMs = safeGet(state, "time.now", null);
-  const simNow = fmtTimeFromMsPrague(simMs);
-
-  const baseInfo = API_BASE ? `API: ${API_BASE}` : "API: same-origin";
-  els.subtitle.textContent = `Reálný čas: ${realNow} • Sim: ${simNow} • ${baseInfo}`;
-
-  if (!ok) setPill("OFFLINE – nejde /state", "bad");
-  else {
-    const msg = state?.message || "OK";
-    const level =
-      /přehř|overheat|krit/i.test(msg) ? "bad" :
-      /riziko|šetř|nízk/i.test(msg) ? "warn" : "ok";
-    setPill(msg, level);
-  }
-
-  setIcons(state, ok);
-
-  els.envLight.textContent = fmt(Number(light), 0);
-  els.envTemp.textContent  = adv ? fmt(Number(temp), 2) : fmt(Number(temp), 1);
-
-  els.socPct.textContent   = fmt(Number(socPct), 0);
-  els.solarW.textContent   = adv ? fmt(Number(solarW), 3) : fmt(Number(solarW), 2);
-  els.loadW.textContent    = adv ? fmt(Number(loadW), 3)  : fmt(Number(loadW), 2);
-
-  const inWh = safeGet(state, "memory.today.totals.energyInWh", null);
-  const outWh = safeGet(state, "memory.today.totals.energyOutWh", null);
-  if (inWh !== null && outWh !== null) {
-    const bal = Number(inWh) - Number(outWh);
-    els.energyHint.textContent = adv
-      ? `Dnes: In ${fmt(Number(inWh), 3)} Wh • Out ${fmt(Number(outWh), 3)} Wh • Bilance ${fmt(bal, 3)} Wh`
-      : `Dnes bilance: ${fmt(bal, 2)} Wh`;
-  } else {
-    els.energyHint.textContent = "Bilance dne: —";
-  }
-
-  const fan = !!safeGet(state, "device.fan", false);
-  els.fanState.textContent = fan ? "ZAPNUTÝ" : "VYPNUTÝ";
-  els.fanReason.textContent = state?.message ? `Důvod: ${state.message}` : "Důvod: —";
-
-  els.brainMsg.textContent = state?.message || "—";
-  const details = Array.isArray(state?.details) ? state.details : [];
-  els.brainDetails.innerHTML = details.slice(0, adv ? 10 : 6).map(d => `<li>${d}</li>`).join("");
-
-  // energy flow
-  els.flowSolar.textContent = adv ? fmt(Number(solarW), 3) : fmt(Number(solarW), 2);
-  els.flowSoc.textContent = fmt(Number(socPct), 0);
-  els.flowLoad.textContent = adv ? fmt(Number(loadW), 3) : fmt(Number(loadW), 2);
-  els.flowNet.textContent = `Net: ${adv ? fmt(Number(solarW) - Number(loadW), 3) : fmt(Number(solarW) - Number(loadW), 2)} W`;
-
-  // prediction
-  const pred = state?.prediction;
-
-  const hoursBattery = pred?.hoursLeftBattery ?? null;
-  const hoursNet = pred?.hoursLeft ?? null;
-
-  // Priorita: vždy ukazuj baterku, fallback na hoursLeft (starší)
-  const showHours = (hoursBattery !== null && hoursBattery !== undefined) ? hoursBattery : hoursNet;
-
-  if (pred) {
-    els.predNet.textContent = adv ? fmt(Number(pred.netW), 3) : fmt(Number(pred.netW), 2);
-    els.predSolar.textContent = fmt(Number(pred.expectedSolarWh), 1);
-    els.predHours.textContent = showHours === null ? "—" : `${fmt(Number(showHours), 2)} h (baterie)`;
-  } else {
-    els.predNet.textContent = "—";
-    els.predSolar.textContent = "—";
-    els.predHours.textContent = "—";
-  }
-
-  if (els.toggleRaw.checked) {
-    els.rawJson.classList.remove("hidden");
-    els.rawJson.textContent = JSON.stringify(state, null, 2);
-  } else {
-    els.rawJson.classList.add("hidden");
-  }
-
-  updateCharts(state);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
 }
 
 let timer = null;
+let intervalMs = Number(localStorage.getItem("refreshInterval") || "1000");
 
-async function fetchState() {
-  try {
-    const r = await fetch(apiUrl("/state"), { cache: "no-store" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const state = await r.json();
-    render(state, true);
-  } catch (e) {
-    render({ message: "OFFLINE – nelze načíst /state" }, false);
-  }
-}
-
-function restartLoop() {
+function startLoop() {
   if (timer) clearInterval(timer);
-  const ms = Number(els.refreshSelect.value || 1000);
-  fetchState();
-  timer = setInterval(fetchState, ms);
+  timer = setInterval(async () => {
+    try {
+      const s = await fetchState();
+      render(s);
+
+      const raw = el("rawJson");
+      if (!raw.classList.contains("hidden")) raw.textContent = JSON.stringify(s, null, 2);
+    } catch (e) {
+      el("statusText").textContent = `Dashboard • chyba: ${e.message}`;
+    }
+  }, intervalMs);
 }
 
 function setupTabs() {
   document.querySelectorAll(".tab").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-      document.querySelectorAll(".tabpane").forEach(p => p.classList.remove("active"));
       btn.classList.add("active");
-      $("tab-" + btn.dataset.tab).classList.add("active");
+
+      const name = btn.getAttribute("data-tab");
+      document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+      el(`tab-${name}`).classList.add("active");
     });
   });
 }
 
-function loadSettings() {
-  els.toggleAdvanced.checked = (localStorage.getItem("ui_adv") === "1");
-  els.toggleRaw.checked = (localStorage.getItem("ui_raw") === "1");
-  els.refreshSelect.value = localStorage.getItem("ui_refresh") || "1000";
+function setupSettings() {
+  el("backendUrl").value = getBackend();
 
-  setApiBase(getApiBase());
-  els.backendStatus.textContent = API_BASE ? `Používám: ${API_BASE}` : "Používám: same-origin";
-}
-
-function bindSettings() {
-  els.toggleAdvanced.addEventListener("change", () => {
-    localStorage.setItem("ui_adv", els.toggleAdvanced.checked ? "1" : "0");
+  el("btnSave").addEventListener("click", () => {
+    setBackend(el("backendUrl").value);
+    el("healthOut").textContent = "Uloženo";
+    startLoop();
   });
 
-  els.toggleRaw.addEventListener("change", () => {
-    localStorage.setItem("ui_raw", els.toggleRaw.checked ? "1" : "0");
-  });
-
-  els.refreshSelect.addEventListener("change", () => {
-    localStorage.setItem("ui_refresh", String(els.refreshSelect.value));
-    restartLoop();
-  });
-
-  els.btnSaveBackend.addEventListener("click", () => {
-    setApiBase(els.backendUrl.value);
-    els.backendStatus.textContent = API_BASE ? `Uloženo: ${API_BASE}` : "Uloženo: same-origin";
-    restartLoop();
-  });
-
-  els.btnTestBackend.addEventListener("click", async () => {
-    const base = normalizeBaseUrl(els.backendUrl.value);
-    const url = (base ? base : "") + "/health";
-    els.backendStatus.textContent = `Testuji: ${url}`;
+  el("btnTest").addEventListener("click", async () => {
+    const backend = el("backendUrl").value.trim().replace(/\/+$/, "");
+    if (!backend) return;
 
     try {
-      const r = await fetch(url, { cache: "no-store" });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const j = await r.json();
-      els.backendStatus.textContent = `OK: ${j.version || "health"} • now=${j.now ?? "?"}`;
-    } catch {
-      els.backendStatus.textContent = "CHYBA: /health nedostupné (URL nebo CORS)";
+      const res = await fetch(`${backend}/health`, { cache: "no-store" });
+      el("healthOut").textContent = res.ok ? "OK" : `HTTP ${res.status}`;
+    } catch (e) {
+      el("healthOut").textContent = `chyba: ${e.message}`;
     }
+  });
+
+  document.querySelectorAll(".chipBtn").forEach(b => {
+    b.addEventListener("click", () => {
+      intervalMs = Number(b.getAttribute("data-interval"));
+      localStorage.setItem("refreshInterval", String(intervalMs));
+      startLoop();
+    });
+  });
+
+  // raw json toggle
+  const chk = el("chkRaw");
+  const raw = el("rawJson");
+  chk.addEventListener("change", () => {
+    raw.classList.toggle("hidden", !chk.checked);
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  els = {
-    subtitle: $("subtitle"),
-    pillStatus: $("pillStatus"),
-    icoDay: $("icoDay"),
-    icoWifi: $("icoWifi"),
-    icoBattery: $("icoBattery"),
-    icoFan: $("icoFan"),
-
-    envLight: $("envLight"),
-    envTemp: $("envTemp"),
-    socPct: $("socPct"),
-    solarW: $("solarW"),
-    loadW: $("loadW"),
-    energyHint: $("energyHint"),
-
-    fanState: $("fanState"),
-    fanBadge: $("fanBadge"),
-    fanReason: $("fanReason"),
-
-    brainMsg: $("brainMsg"),
-    brainDetails: $("brainDetails"),
-
-    flowSolar: $("flowSolar"),
-    flowSoc: $("flowSoc"),
-    flowLoad: $("flowLoad"),
-    flowNet: $("flowNet"),
-
-    predNet: $("predNet"),
-    predHours: $("predHours"),
-    predSolar: $("predSolar"),
-
-    backendUrl: $("backendUrl"),
-    btnSaveBackend: $("btnSaveBackend"),
-    btnTestBackend: $("btnTestBackend"),
-    backendStatus: $("backendStatus"),
-
-    toggleAdvanced: $("toggleAdvanced"),
-    refreshSelect: $("refreshSelect"),
-    toggleRaw: $("toggleRaw"),
-    rawJson: $("rawJson"),
-
-    chartHintTemp: $("chartHintTemp"),
-    chartHintPower: $("chartHintPower"),
-  };
-
+(async function boot() {
   setupTabs();
-  loadSettings();
-  bindSettings();
-  restartLoop();
-});
+  setupSettings();
+
+  // initial fetch once
+  try {
+    const s = await fetchState();
+    render(s);
+  } catch (e) {
+    el("statusText").textContent = `Dashboard • chyba: ${e.message}`;
+  }
+
+  startLoop();
+})();
