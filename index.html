@@ -39,6 +39,7 @@
               <div class="k">Světlo</div><div class="v"><span id="uiLight">—</span> lx</div>
               <div class="k">Teplota</div><div class="v"><span id="uiTemp">—</span> °C</div>
               <div class="k">Vlhkost</div><div class="v"><span id="uiHum">—</span> %</div>
+              <div class="k">Box</div><div class="v"><span id="uiBoxTemp">—</span> °C</div>
             </div>
             <div class="chips" id="uiWeatherChips"></div>
           </div>
@@ -62,7 +63,7 @@
               <div class="msg" id="uiMsg">—</div>
               <div class="msgSub" id="uiDetails">—</div>
             </div>
-            <div class="brainBadge" id="uiModeBadge">NORMAL</div>
+            <div class="brainBadge" id="uiModeBadge">—</div>
           </div>
 
           <div class="brainGrid">
@@ -98,15 +99,83 @@
       <!-- HISTORIE -->
       <section class="panel" id="tab-history">
         <div class="card">
-          <div class="card-h">Historie (poslední dny)</div>
-          <div class="muted">Zobrazuje to, co backend posílá v <code>memory.days</code>.</div>
-          <pre class="pre" id="uiHistory">—</pre>
+          <div class="card-h">Historie – grafy + shrnutí (B 3.24)</div>
+          <div class="row">
+            <div class="muted">Den:</div>
+            <select id="daySelect" class="select"></select>
+            <button id="btnDayPrev" class="btn ghost">←</button>
+            <button id="btnDayNext" class="btn ghost">→</button>
+            <span class="muted" id="dayInfo">—</span>
+          </div>
+
+          <div class="summaryBox">
+            <div class="summaryTitle">Denní shrnutí</div>
+            <div class="summaryLine" id="daySummaryHeadline">—</div>
+            <div class="summaryGrid" id="daySummaryGrid"></div>
+            <div class="summaryNote" id="daySummaryNote">—</div>
+          </div>
+
+          <div class="grid2">
+            <div class="chartCard">
+              <div class="chartTitle">Teplota (°C)</div>
+              <canvas id="chartTemp"></canvas>
+            </div>
+            <div class="chartCard">
+              <div class="chartTitle">Solár vs Zátěž (W)</div>
+              <canvas id="chartPower"></canvas>
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="chartCard">
+              <div class="chartTitle">Světlo (lx)</div>
+              <canvas id="chartLight"></canvas>
+            </div>
+            <div class="chartCard">
+              <div class="chartTitle">Mozek – riziko (pokud backend loguje)</div>
+              <canvas id="chartBrainRisk"></canvas>
+              <div class="muted small">Když backend neposílá risk historii, graf zůstane prázdný (nic se neláme).</div>
+            </div>
+          </div>
         </div>
 
         <div class="card">
-          <div class="card-h">Týdny</div>
-          <div class="muted">Pokud backend posílá <code>memory.weeks</code>, zobrazí se agregace.</div>
-          <pre class="pre" id="uiWeeks">—</pre>
+          <div class="card-h">Týdny – agregace + shrnutí (B 3.25)</div>
+          <div class="muted">Agregace se dělá klientsky z <code>memory.days</code>.</div>
+
+          <div class="summaryBox">
+            <div class="summaryTitle">Týdenní shrnutí</div>
+            <div class="summaryLine" id="weekSummaryHeadline">—</div>
+            <div class="summaryGrid" id="weekSummaryGrid"></div>
+          </div>
+
+          <div class="chartCard">
+            <div class="chartTitle">Týdenní min/max teplota (°C)</div>
+            <canvas id="chartWeekTemp"></canvas>
+          </div>
+          <div class="chartCard">
+            <div class="chartTitle">Týdenní energie (pokud jsou Wh)</div>
+            <canvas id="chartWeekEnergy"></canvas>
+            <div class="muted small">Preferuje <code>day.energyInWh / day.energyOutWh</code> nebo <code>day.totals</code>. Když nic není, spočítá odhad z W řady.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Timeline událostí (B 3.26)</div>
+          <div class="muted">Poslední události (bouřka/mlha/nárazy + změny režimu mozku). Ukládá se lokálně v prohlížeči.</div>
+          <div id="timeline" class="timeline">—</div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Export (B 3.27)</div>
+          <div class="row">
+            <button id="btnExportState" class="btn">Export /state JSON</button>
+            <button id="btnExportMemory" class="btn ghost">Export memory.days JSON</button>
+            <button id="btnExportCSVTemp" class="btn ghost">CSV: teplota</button>
+            <button id="btnExportCSVPower" class="btn ghost">CSV: solár/zátěž</button>
+            <button id="btnExportCSVLight" class="btn ghost">CSV: světlo</button>
+          </div>
+          <div class="muted small">CSV exportuje právě vybraný den.</div>
         </div>
       </section>
 
@@ -173,10 +242,6 @@
             </div>
           </div>
 
-          <div class="muted">
-            Tip: GitHub Pages automaticky použije tvůj Railway backend. Když chceš přepnout, napiš ho sem.
-          </div>
-
           <pre class="pre hidden" id="rawJson">—</pre>
         </div>
       </section>
@@ -187,6 +252,7 @@
     </footer>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
