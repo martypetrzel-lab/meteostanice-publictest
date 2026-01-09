@@ -87,7 +87,7 @@ function escapeHtml(s) {
 }
 
 /* ---------------------------
-   Risk trend
+   Risk trend (lokální)
 ---------------------------- */
 function pushRiskPoint(risk) {
   const key = "riskSeries";
@@ -184,14 +184,25 @@ function makeLineChart(canvasId, labels, datasets, yTitle = "") {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
+      animation: false,            // důležité pro stabilní layout
       plugins: { legend: { labels: { color: "#e9eefc" } } },
       scales: {
         x: { ticks: { color: "#9fb0d8", maxRotation: 0 }, grid: { color: "rgba(255,255,255,.06)" } },
-        y: { ticks: { color: "#9fb0d8" }, grid: { color: "rgba(255,255,255,.06)" },
-             title: { display: !!yTitle, text: yTitle, color: "#9fb0d8" } }
+        y: {
+          ticks: { color: "#9fb0d8" },
+          grid: { color: "rgba(255,255,255,.06)" },
+          title: { display: !!yTitle, text: yTitle, color: "#9fb0d8" }
+        }
       }
     }
   });
+}
+
+function updateLineChart(chart, labels, datasets) {
+  if (!chart) return;
+  chart.data.labels = labels;
+  chart.data.datasets = datasets;
+  chart.update("none"); // bez animace, bez resize skoků
 }
 
 function alignTo(masterLabels, labels, data) {
@@ -203,6 +214,7 @@ function alignTo(masterLabels, labels, data) {
 function fillDaySelect(days) {
   const sel = el("daySelect");
   if (!sel) return;
+  const prev = sel.value;
   sel.innerHTML = "";
   for (let i = 0; i < days.length; i++) {
     const d = days[i];
@@ -212,6 +224,7 @@ function fillDaySelect(days) {
     opt.textContent = key;
     sel.appendChild(opt);
   }
+  if (prev !== "" && Number(prev) < days.length) sel.value = prev;
 }
 
 function chooseDayIndex(days) {
@@ -241,9 +254,15 @@ function statsOf(arr) {
   return { n: xs.length, min: mn, max: mx, avg: sum / xs.length };
 }
 
-// Odhad Wh z časové řady W: integrace s prům. dt (sekundy)
+function parseHMS(s) {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(s || "").trim());
+  if (!m) return null;
+  const hh = Number(m[1]), mm = Number(m[2]), ss = Number(m[3] ?? "0");
+  if (![hh, mm, ss].every(Number.isFinite)) return null;
+  return hh * 3600 + mm * 60 + ss;
+}
+
 function estimateWhFromWSeries(labels, watts) {
-  // labels jsou "HH:MM:SS" → přepočítáme na sekundy od půlnoci
   const pts = [];
   for (let i = 0; i < labels.length; i++) {
     const t = parseHMS(labels[i]);
@@ -253,23 +272,13 @@ function estimateWhFromWSeries(labels, watts) {
   }
   if (pts.length < 2) return null;
 
-  // trapezoid
   let wh = 0;
   for (let i = 1; i < pts.length; i++) {
-    const dt = Math.max(0, pts[i].t - pts[i - 1].t); // seconds
+    const dt = Math.max(0, pts[i].t - pts[i - 1].t);
     const wAvg = (pts[i].w + pts[i - 1].w) / 2;
-    wh += (wAvg * dt) / 3600; // W*s -> Wh
+    wh += (wAvg * dt) / 3600;
   }
   return wh;
-}
-
-function parseHMS(s) {
-  // "15:43:18"
-  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(s || "").trim());
-  if (!m) return null;
-  const hh = Number(m[1]), mm = Number(m[2]), ss = Number(m[3] ?? "0");
-  if (![hh, mm, ss].every(Number.isFinite)) return null;
-  return hh * 3600 + mm * 60 + ss;
 }
 
 function makeSummaryCards(containerId, items) {
@@ -285,17 +294,14 @@ function makeSummaryCards(containerId, items) {
 }
 
 function makeDailySentence(s) {
-  // velmi "tiché" a lidské
-  // rozhodnutí podle energie a rizik
-  if (s.maxRisk !== null && s.maxRisk >= 70) return "Dnes to nebylo úplně klidné – mozek musel hlídat rizika.";
-  if (s.netWh !== null && s.netWh > 0.5) return "Pěkný den – energie spíš přibývala a data se sbírala v pohodě.";
-  if (s.netWh !== null && s.netWh < -0.5) return "Energie spíš ubývala, takže mozek hrál bezpečněji.";
-  if (s.thunderCount > 0) return "Během dne se objevily bouřkové podmínky, sběr byl opatrnější.";
+  if (s.maxRisk !== null && s.maxRisk >= 70) return "Dnes to nebylo úplně klidné – hlídal jsem rizika a šetřil energii.";
+  if (s.netWh !== null && s.netWh > 0.5) return "Pěkný den – energie spíš přibývala a sběr běžel v pohodě.";
+  if (s.netWh !== null && s.netWh < -0.5) return "Energie spíš ubývala, tak jsem hrál bezpečněji.";
+  if (s.thunderCount > 0) return "Objevily se bouřkové podmínky, sběr byl opatrnější.";
   return "Běžný den – průběžně sleduju energii a podmínky.";
 }
 
 function renderDailySummary(day) {
-  // série
   const sTemp = normalizeSeries(day, "temperature");
   const sIn = normalizeSeries(day, "energyIn");
   const sOut = normalizeSeries(day, "energyOut");
@@ -306,7 +312,6 @@ function renderDailySummary(day) {
   const stL = statsOf(sLight.data);
   const stR = statsOf(sRisk.data);
 
-  // energie Wh: preferuj backend totals, jinak odhad z W řad
   let inWh = pickNumber(day, ["energyInWh", "solarWh", "inWh", "dayInWh"]);
   let outWh = pickNumber(day, ["energyOutWh", "loadWh", "outWh", "dayOutWh"]);
   const ti = pickNumber(day?.totals, ["energyInWh", "solarWh", "inWh"]);
@@ -319,7 +324,6 @@ function renderDailySummary(day) {
 
   const netWh = (Number.isFinite(inWh) && Number.isFinite(outWh)) ? (inWh - outWh) : null;
 
-  // události (pokud backend někde loguje eventy do dne; když ne, necháme 0)
   const thunderCount = Number.isFinite(day?.thunderCount) ? day.thunderCount : 0;
 
   const headline = [];
@@ -327,7 +331,6 @@ function renderDailySummary(day) {
   if (Number.isFinite(inWh)) headline.push(`Solár ~${fmt1(inWh)} Wh`);
   if (Number.isFinite(outWh)) headline.push(`Zátěž ~${fmt1(outWh)} Wh`);
   if (netWh !== null) headline.push(`Bilance ${netWh >= 0 ? "+" : ""}${fmt1(netWh)} Wh`);
-
   setText("daySummaryHeadline", headline.length ? headline.join(" • ") : "—");
 
   makeSummaryCards("daySummaryGrid", [
@@ -335,27 +338,19 @@ function renderDailySummary(day) {
     { k: "Min/Max teplota", v: (stT.min !== null) ? `${fmt1(stT.min)} / ${fmt1(stT.max)} °C` : "—" },
     { k: "Průměr teploty", v: (stT.avg !== null) ? `${fmt1(stT.avg)} °C` : "—" },
     { k: "Světlo max", v: (stL.max !== null) ? `${fmt0(stL.max)} lx` : "—" },
-
     { k: "Energie IN", v: Number.isFinite(inWh) ? `${fmt1(inWh)} Wh` : "—" },
     { k: "Energie OUT", v: Number.isFinite(outWh) ? `${fmt1(outWh)} Wh` : "—" },
     { k: "Bilance", v: (netWh !== null) ? `${netWh >= 0 ? "+" : ""}${fmt1(netWh)} Wh` : "—" },
     { k: "Max riziko", v: (stR.max !== null) ? `${fmt0(stR.max)}/100` : "—" },
   ]);
 
-  const noteObj = {
-    maxRisk: stR.max,
-    netWh,
-    thunderCount
-  };
-  setText("daySummaryNote", makeDailySentence(noteObj));
+  setText("daySummaryNote", makeDailySentence({ maxRisk: stR.max, netWh, thunderCount }));
 }
 
 function renderWeeklySummary(days) {
-  // po 7 dnech
   const weeks = [];
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
-  // souhrn: nejnižší/nejvyšší teplota napříč týdny + energie
   let globalMin = Infinity, globalMax = -Infinity;
   let sumIn = 0, sumOut = 0;
   let okIn = false, okOut = false;
@@ -398,7 +393,6 @@ function renderWeeklySummary(days) {
   if (okIn) headline.push(`Solár ~${fmt1(sumIn)} Wh`);
   if (okOut) headline.push(`Zátěž ~${fmt1(sumOut)} Wh`);
   if (net !== null) headline.push(`Bilance ${net >= 0 ? "+" : ""}${fmt1(net)} Wh`);
-
   setText("weekSummaryHeadline", headline.length ? headline.join(" • ") : "—");
 
   makeSummaryCards("weekSummaryGrid", [
@@ -412,8 +406,33 @@ function renderWeeklySummary(days) {
 }
 
 /* ---------------------------
-   History charts + weekly charts
+   History: render jen když je potřeba (FIX "ujíždění")
 ---------------------------- */
+let lastState = null;
+let currentDayIndex = 0;
+
+// hlídáme kdy je potřeba re-render historie
+let lastHistorySignature = "";
+let lastHistoryDayIndex = -1;
+let historyChartsInitialized = false;
+
+function isHistoryTabActive() {
+  const btn = document.querySelector(".tab.active");
+  return btn?.getAttribute("data-tab") === "history";
+}
+
+function historySignatureFromState(state) {
+  const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
+  if (!days.length) return "0";
+  const last = days[days.length - 1];
+  const lastKey = last?.key || last?.dayKey || last?.date || "";
+  const lastLenT = Array.isArray(last?.temperature) ? last.temperature.length : 0;
+  const lastLenIn = Array.isArray(last?.energyIn) ? last.energyIn.length : 0;
+  const lastLenOut = Array.isArray(last?.energyOut) ? last.energyOut.length : 0;
+  const lastLenL = Array.isArray(last?.light) ? last.light.length : 0;
+  return `${days.length}|${lastKey}|${lastLenT}|${lastLenIn}|${lastLenOut}|${lastLenL}`;
+}
+
 function renderWeeklyCharts(days) {
   const weeks = [];
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
@@ -440,18 +459,23 @@ function renderWeeklyCharts(days) {
     maxT.push(Number.isFinite(mx) ? mx : null);
   }
 
-  destroyChart(chartWeekTemp);
-  chartWeekTemp = makeLineChart(
-    "chartWeekTemp",
-    labels,
-    [
+  if (!chartWeekTemp) {
+    chartWeekTemp = makeLineChart(
+      "chartWeekTemp",
+      labels,
+      [
+        { label: "Min (°C)", data: minT, tension: 0.25, pointRadius: 0 },
+        { label: "Max (°C)", data: maxT, tension: 0.25, pointRadius: 0 }
+      ],
+      "°C"
+    );
+  } else {
+    updateLineChart(chartWeekTemp, labels, [
       { label: "Min (°C)", data: minT, tension: 0.25, pointRadius: 0 },
       { label: "Max (°C)", data: maxT, tension: 0.25, pointRadius: 0 }
-    ],
-    "°C"
-  );
+    ]);
+  }
 
-  // Energie týdně: prefer Wh, jinak odhad
   const inWh = [];
   const outWh = [];
 
@@ -484,18 +508,23 @@ function renderWeeklyCharts(days) {
     outWh.push(okOut ? sumOut : null);
   }
 
-  destroyChart(chartWeekEnergy);
-  chartWeekEnergy = makeLineChart(
-    "chartWeekEnergy",
-    labels,
-    [
+  if (!chartWeekEnergy) {
+    chartWeekEnergy = makeLineChart(
+      "chartWeekEnergy",
+      labels,
+      [
+        { label: "Energie IN (Wh)", data: inWh, tension: 0.25, pointRadius: 0 },
+        { label: "Energie OUT (Wh)", data: outWh, tension: 0.25, pointRadius: 0 }
+      ],
+      "Wh"
+    );
+  } else {
+    updateLineChart(chartWeekEnergy, labels, [
       { label: "Energie IN (Wh)", data: inWh, tension: 0.25, pointRadius: 0 },
       { label: "Energie OUT (Wh)", data: outWh, tension: 0.25, pointRadius: 0 }
-    ],
-    "Wh"
-  );
+    ]);
+  }
 
-  // Weekly summary (B)
   renderWeeklySummary(days);
 }
 
@@ -507,9 +536,11 @@ function renderHistoryCharts(state) {
   }
 
   fillDaySelect(days);
-  let idx = chooseDayIndex(days);
+
   const sel = el("daySelect");
-  if (sel) sel.value = String(idx);
+  let idx = chooseDayIndex(days);
+  if (sel) idx = Number(sel.value || idx);
+  if (!Number.isFinite(idx) || idx < 0 || idx >= days.length) idx = chooseDayIndex(days);
 
   const day = days[idx] || {};
   const dayKey = day?.key || day?.dayKey || day?.date || `den ${idx + 1}`;
@@ -520,49 +551,84 @@ function renderHistoryCharts(state) {
   const sLight = normalizeSeries(day, "light");
   const sRisk = normalizeSeries(day, "risk");
 
-  setText("dayInfo", `Vybráno: ${dayKey} • vzorků T:${sTemp.data.filter(v=>v!==null).length}  S:${sIn.data.filter(v=>v!==null).length}  Z:${sOut.data.filter(v=>v!==null).length}`);
+  setText("dayInfo", `Vybráno: ${dayKey} • vzorků T:${sTemp.data.filter(v=>v!==null).length} S:${sIn.data.filter(v=>v!==null).length} Z:${sOut.data.filter(v=>v!==null).length}`);
 
-  destroyChart(chartTemp); destroyChart(chartPower); destroyChart(chartLight); destroyChart(chartBrainRisk);
+  // Teplota
+  if (!chartTemp) {
+    chartTemp = makeLineChart("chartTemp", sTemp.labels, [
+      { label: "Teplota (°C)", data: sTemp.data, tension: 0.25, pointRadius: 0 }
+    ], "°C");
+  } else {
+    updateLineChart(chartTemp, sTemp.labels, [
+      { label: "Teplota (°C)", data: sTemp.data, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
 
-  chartTemp = makeLineChart(
-    "chartTemp",
-    sTemp.labels,
-    [{ label: "Teplota (°C)", data: sTemp.data, tension: 0.25, pointRadius: 0 }],
-    "°C"
-  );
-
+  // Power (sladíme labely)
   const labelsPower = (sIn.labels.length >= sOut.labels.length) ? sIn.labels : sOut.labels;
-  chartPower = makeLineChart(
-    "chartPower",
-    labelsPower,
-    [
-      { label: "Solár (W)", data: alignTo(labelsPower, sIn.labels, sIn.data), tension: 0.25, pointRadius: 0 },
-      { label: "Zátěž (W)", data: alignTo(labelsPower, sOut.labels, sOut.data), tension: 0.25, pointRadius: 0 }
-    ],
-    "W"
-  );
+  const dsPower = [
+    { label: "Solár (W)", data: alignTo(labelsPower, sIn.labels, sIn.data), tension: 0.25, pointRadius: 0 },
+    { label: "Zátěž (W)", data: alignTo(labelsPower, sOut.labels, sOut.data), tension: 0.25, pointRadius: 0 }
+  ];
+  if (!chartPower) chartPower = makeLineChart("chartPower", labelsPower, dsPower, "W");
+  else updateLineChart(chartPower, labelsPower, dsPower);
 
-  chartLight = makeLineChart(
-    "chartLight",
-    sLight.labels,
-    [{ label: "Světlo (lx)", data: sLight.data, tension: 0.25, pointRadius: 0 }],
-    "lx"
-  );
+  // Světlo
+  if (!chartLight) {
+    chartLight = makeLineChart("chartLight", sLight.labels, [
+      { label: "Světlo (lx)", data: sLight.data, tension: 0.25, pointRadius: 0 }
+    ], "lx");
+  } else {
+    updateLineChart(chartLight, sLight.labels, [
+      { label: "Světlo (lx)", data: sLight.data, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
 
-  chartBrainRisk = makeLineChart(
-    "chartBrainRisk",
-    sRisk.labels,
-    [{ label: "Riziko (0–100)", data: sRisk.data, tension: 0.25, pointRadius: 0 }],
-    "risk"
-  );
+  // Riziko (pokud existuje)
+  if (!chartBrainRisk) {
+    chartBrainRisk = makeLineChart("chartBrainRisk", sRisk.labels, [
+      { label: "Riziko (0–100)", data: sRisk.data, tension: 0.25, pointRadius: 0 }
+    ], "risk");
+  } else {
+    updateLineChart(chartBrainRisk, sRisk.labels, [
+      { label: "Riziko (0–100)", data: sRisk.data, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
 
-  // Daily summary (B)
   renderDailySummary(day);
-
-  // Weekly charts + summary
   renderWeeklyCharts(days);
 
   currentDayIndex = idx;
+  historyChartsInitialized = true;
+}
+
+function maybeUpdateHistory(state, force = false) {
+  if (!state) return;
+  if (!isHistoryTabActive() && !force) return;
+
+  const sig = historySignatureFromState(state);
+  const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
+  const idx = chooseDayIndex(days);
+
+  // aktualizuj jen pokud:
+  // - poprvé (grafy nejsou init)
+  // - změnil se vybraný den
+  // - změnila se historie (signature)
+  const selectedIdx = Number(el("daySelect")?.value);
+  const effectiveIdx = Number.isFinite(selectedIdx) ? selectedIdx : idx;
+
+  const need =
+    force ||
+    !historyChartsInitialized ||
+    sig !== lastHistorySignature ||
+    effectiveIdx !== lastHistoryDayIndex;
+
+  if (!need) return;
+
+  lastHistorySignature = sig;
+  lastHistoryDayIndex = effectiveIdx;
+
+  renderHistoryCharts(state);
 }
 
 /* ---------------------------
@@ -591,9 +657,6 @@ function csvFromSeries(labels, cols) {
   }
   return lines.join("\n");
 }
-
-let lastState = null;
-let currentDayIndex = 0;
 
 function safeName(day) {
   const key = day?.key || day?.dayKey || day?.date || `day_${currentDayIndex + 1}`;
@@ -638,7 +701,7 @@ function wireExports() {
 }
 
 /* ---------------------------
-   UI render
+   UI render (DNES + ENERGIE)
 ---------------------------- */
 function setModeBadge(badgeEl, mode, risk) {
   if (!badgeEl) return;
@@ -654,6 +717,7 @@ function setModeBadge(badgeEl, mode, risk) {
     "rgba(83,227,166,.10)";
 }
 
+let lastMode = "";
 function render(state) {
   lastState = state;
   const backend = getBackend();
@@ -688,7 +752,6 @@ function render(state) {
   const det = Array.isArray(state?.details) ? state.details.join(" • ") : (state?.details || "—");
   setText("uiDetails", det || "—");
 
-  // weather chips
   const wc = el("uiWeatherChips");
   if (wc) {
     wc.innerHTML = "";
@@ -736,7 +799,6 @@ function render(state) {
   if (dayMin !== null) sunBits.push(`den ${fmt0(dayMin)} min`);
   setText("uiSunHint", sunBits.length ? sunBits.join(" • ") : "—");
 
-  // brain chips
   const bc = el("uiBrainChips");
   if (bc) {
     bc.innerHTML = "";
@@ -761,16 +823,19 @@ function render(state) {
     drawRisk(el("riskCanvas"), series);
   }
 
-  // timeline
-  if (mode && mode !== "—") pushTL("mode", "Režim mozku", `Aktuálně: ${mode}`);
+  // timeline – nepiš každý tick stejné
+  if (mode && mode !== "—" && mode !== lastMode) {
+    pushTL("mode", "Režim mozku", `Aktuálně: ${mode}`);
+    lastMode = mode;
+  }
   if (env.thunder || env.events?.storm) pushTL("storm", "Bouřka / storm", "Zaznamenána bouřková aktivita.");
   if (env.events?.fog) pushTL("fog", "Mlha", "Zhoršená viditelnost (mlha).");
   if (env.events?.gust) pushTL("gust", "Nárazy větru", `Vítr: ${fmt1(Number(env.windMs ?? 0))} m/s`);
   if (env.snowing) pushTL("snow", "Sněžení", `Sníh: ${fmt1(Number(env.snowDepthCm ?? 0))} cm`);
   renderTL();
 
-  // history charts + summaries
-  renderHistoryCharts(state);
+  // ✅ KLÍČOVÝ FIX: historie se NEPŘEKRESLUJE každou sekundu
+  maybeUpdateHistory(state);
 
   setText("statusText", "Dashboard • OK");
 }
@@ -815,6 +880,11 @@ function setupTabs() {
       document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
       const panel = el(`tab-${name}`);
       if (panel) panel.classList.add("active");
+
+      // když přepnu na historii, hned jednou vykresli
+      if (name === "history" && lastState) {
+        maybeUpdateHistory(lastState, true);
+      }
     });
   });
 }
@@ -871,7 +941,7 @@ function setupHistoryControls() {
       if (Number.isFinite(idx)) {
         setDayIndex(idx);
         currentDayIndex = idx;
-        if (lastState) renderHistoryCharts(lastState);
+        if (lastState) maybeUpdateHistory(lastState, true);
       }
     });
   }
@@ -883,7 +953,7 @@ function setupHistoryControls() {
     setDayIndex(idx);
     currentDayIndex = idx;
     if (sel) sel.value = String(idx);
-    renderHistoryCharts(lastState);
+    if (lastState) maybeUpdateHistory(lastState, true);
   });
 
   if (next) next.addEventListener("click", () => {
@@ -893,13 +963,8 @@ function setupHistoryControls() {
     setDayIndex(idx);
     currentDayIndex = idx;
     if (sel) sel.value = String(idx);
-    renderHistoryCharts(lastState);
+    if (lastState) maybeUpdateHistory(lastState, true);
   });
-}
-
-function wireExports() {
-  // už definováno výš, voláme jen kvůli pořadí
-  // (funkce zůstává v souboru)
 }
 
 (async function boot() {
@@ -911,6 +976,8 @@ function wireExports() {
   try {
     const s = await fetchState();
     render(s);
+    // při startu nevynucuj historii (pokud nejsi na historii)
+    // vykreslí se až při přepnutí na tab, nebo změně signature
   } catch (e) {
     setText("statusText", `Dashboard • chyba: ${e.message}`);
   }
