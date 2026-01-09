@@ -1,6 +1,13 @@
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
+
+// bezpečné settery
+const setText = (id, text) => { const e = el(id); if (e) e.textContent = text; };
+const setHref = (id, href) => { const e = el(id); if (e) e.href = href; };
+const setValue = (id, val) => { const e = el(id); if (e) e.value = val; };
+const toggleClass = (id, cls, on) => { const e = el(id); if (e) e.classList.toggle(cls, !!on); };
+
 const fmt1 = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : "—");
 const fmt0 = (x) => (Number.isFinite(x) ? Math.round(x) : "—");
 
@@ -20,6 +27,7 @@ function riskClass(r) {
 }
 
 function setChip(container, text, cls) {
+  if (!container) return;
   const d = document.createElement("span");
   d.className = `chip ${cls || ""}`.trim();
   d.textContent = text;
@@ -56,12 +64,14 @@ function pushRiskPoint(risk) {
   return out;
 }
 
+function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
 function drawRisk(canvas, series) {
+  if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const w = canvas.width;
   const h = canvas.height;
 
-  // clear
   ctx.clearRect(0, 0, w, h);
 
   // grid
@@ -86,7 +96,6 @@ function drawRisk(canvas, series) {
   const xOf = (t) => ((t - t0) / dt) * (w - 20) + 10;
   const yOf = (r) => (h - 18) - (clamp(r, 0, 100) / 100) * (h - 26);
 
-  // line
   ctx.lineWidth = 2;
   ctx.strokeStyle = "#7cc0ff";
   ctx.beginPath();
@@ -94,7 +103,6 @@ function drawRisk(canvas, series) {
   for (let i = 1; i < series.length; i++) ctx.lineTo(xOf(series[i].t), yOf(series[i].r));
   ctx.stroke();
 
-  // last point
   const last = series[series.length - 1];
   ctx.fillStyle = "#53e3a6";
   ctx.beginPath();
@@ -102,9 +110,8 @@ function drawRisk(canvas, series) {
   ctx.fill();
 }
 
-function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
-
 function setModeBadge(badgeEl, mode, risk) {
+  if (!badgeEl) return;
   badgeEl.textContent = mode || "—";
   const cls = riskClass(risk);
   badgeEl.style.borderColor =
@@ -118,20 +125,18 @@ function setModeBadge(badgeEl, mode, risk) {
 }
 
 function render(state) {
-  // header links
   const backend = getBackend();
-  el("stateLink").href = `${backend}/state`;
+  setHref("stateLink", `${backend}/state`);
 
   // env basics
-  const w = state?.world?.environment || {};
-  const env = w;
+  const env = state?.world?.environment || {};
   const light = env.light ?? state?.environment?.light;
   const temp = env.airTempC ?? env.temperature ?? state?.environment?.temperature;
   const hum = env.humidity ?? state?.environment?.humidity;
 
-  el("uiLight").textContent = fmt0(light);
-  el("uiTemp").textContent = fmt1(temp);
-  el("uiHum").textContent = fmt0(hum);
+  setText("uiLight", fmt0(light));
+  setText("uiTemp", fmt1(temp));
+  setText("uiHum", fmt0(hum));
 
   // energy
   const soc = state?.brain?.battery?.socPercent ?? state?.device?.battery?.soc ?? state?.device?.battery ?? null;
@@ -139,53 +144,55 @@ function render(state) {
   const load = state?.device?.power?.loadW ?? null;
   const fan = state?.device?.fan;
 
-  el("uiSoc").textContent = (soc === null || soc === undefined) ? "—" : fmt0(Number(soc));
-  el("uiSolar").textContent = fmt1(Number(solar));
-  el("uiLoad").textContent = fmt1(Number(load));
-  el("uiFan").textContent = (fan === true) ? "ON" : (fan === false) ? "OFF" : "—";
+  setText("uiSoc", (soc === null || soc === undefined) ? "—" : fmt0(Number(soc)));
+  setText("uiSolar", fmt1(Number(solar)));
+  setText("uiLoad", fmt1(Number(load)));
+  setText("uiFan", (fan === true) ? "ON" : (fan === false) ? "OFF" : "—");
 
-  el("uiSolar2").textContent = fmt1(Number(solar));
-  el("uiSoc2").textContent = (soc === null || soc === undefined) ? "—" : fmt0(Number(soc));
-  el("uiLoad2").textContent = fmt1(Number(load));
+  setText("uiSolar2", fmt1(Number(solar)));
+  setText("uiSoc2", (soc === null || soc === undefined) ? "—" : fmt0(Number(soc)));
+  setText("uiLoad2", fmt1(Number(load)));
 
   // message
-  el("uiMsg").textContent = state?.message || "—";
+  setText("uiMsg", state?.message || "—");
   const det = Array.isArray(state?.details) ? state.details.join(" • ") : (state?.details || "—");
-  el("uiDetails").textContent = det || "—";
+  setText("uiDetails", det || "—");
 
   // weather chips
   const wc = el("uiWeatherChips");
-  wc.innerHTML = "";
-  if (env.summary?.sky) setChip(wc, env.summary.sky, "ok");
-  if (env.summary?.precip) setChip(wc, env.summary.precip, env.raining || env.snowing ? "warn" : "ok");
-  if (env.summary?.wind) setChip(wc, `vítr: ${env.summary.wind}`, (env.windMs >= 12) ? "warn" : "ok");
-  if (env.thunder) setChip(wc, "bouřka", "bad");
-  if (env.events?.fog) setChip(wc, "mlha", "warn");
-  if (env.events?.gust) setChip(wc, "nárazy", "warn");
+  if (wc) {
+    wc.innerHTML = "";
+    if (env.summary?.sky) setChip(wc, env.summary.sky, "ok");
+    if (env.summary?.precip) setChip(wc, env.summary.precip, (env.raining || env.snowing) ? "warn" : "ok");
+    if (env.summary?.wind) setChip(wc, `vítr: ${env.summary.wind}`, (env.windMs >= 12) ? "warn" : "ok");
+    if (env.thunder) setChip(wc, "bouřka", "bad");
+    if (env.events?.fog) setChip(wc, "mlha", "warn");
+    if (env.events?.gust) setChip(wc, "nárazy", "warn");
+  }
 
   // brain
   const brain = state?.brain || {};
   const risk = Number.isFinite(brain?.risk) ? brain.risk : null;
   const mode = brain?.mode || "—";
-  el("uiRisk").textContent = (risk === null) ? "—" : String(risk);
 
-  // bar
+  setText("uiRisk", (risk === null) ? "—" : String(risk));
+
   const rf = el("uiRiskBar");
-  rf.style.width = `${clamp(risk ?? 0, 0, 100)}%`;
-  const rc = riskClass(risk ?? 0);
-  rf.style.background =
-    rc === "bad" ? "linear-gradient(90deg, rgba(255,92,124,.95), rgba(255,209,102,.65))" :
-    rc === "warn" ? "linear-gradient(90deg, rgba(255,209,102,.95), rgba(124,192,255,.65))" :
-    "linear-gradient(90deg, rgba(83,227,166,.95), rgba(124,192,255,.75))";
+  if (rf) {
+    rf.style.width = `${clamp(risk ?? 0, 0, 100)}%`;
+    const rc = riskClass(risk ?? 0);
+    rf.style.background =
+      rc === "bad" ? "linear-gradient(90deg, rgba(255,92,124,.95), rgba(255,209,102,.65))" :
+      rc === "warn" ? "linear-gradient(90deg, rgba(255,209,102,.95), rgba(124,192,255,.65))" :
+      "linear-gradient(90deg, rgba(83,227,166,.95), rgba(124,192,255,.75))";
+  }
 
   setModeBadge(el("uiModeBadge"), mode, risk ?? 0);
 
-  // battery hours
   const bh = brain?.battery?.hours;
-  el("uiBatHours").textContent = (bh === null || bh === undefined) ? "—" : fmt1(Number(bh));
-  el("uiBatHours2").textContent = (bh === null || bh === undefined) ? "—" : fmt1(Number(bh));
-  el("uiBatHint").textContent =
-    (soc === null || soc === undefined) ? "—" : `SOC ${fmt0(Number(soc))} %`;
+  setText("uiBatHours", (bh === null || bh === undefined) ? "—" : fmt1(Number(bh)));
+  setText("uiBatHours2", (bh === null || bh === undefined) ? "—" : fmt1(Number(bh)));
+  setText("uiBatHint", (soc === null || soc === undefined) ? "—" : `SOC ${fmt0(Number(soc))} %`);
 
   // sun info
   const sun = env.sun || {};
@@ -196,57 +203,55 @@ function render(state) {
   const hToSunset = brain?.time?.hoursToSunset;
   const hToSunrise = brain?.time?.hoursToSunrise;
 
-  el("uiSunLine").textContent =
-    (sunrise && sunset) ? `🌅 ${sunrise}  •  🌇 ${sunset}` : "—";
+  setText("uiSunLine", (sunrise && sunset) ? `🌅 ${sunrise}  •  🌇 ${sunset}` : "—");
 
   const sunBits = [];
   if (Number.isFinite(hToSunset)) sunBits.push(`do západu ${fmt1(hToSunset)} h`);
   if (Number.isFinite(hToSunrise)) sunBits.push(`do východu ${fmt1(hToSunrise)} h`);
   if (dayMin !== null) sunBits.push(`den ${fmt0(dayMin)} min`);
-  el("uiSunHint").textContent = sunBits.length ? sunBits.join(" • ") : "—";
+  setText("uiSunHint", sunBits.length ? sunBits.join(" • ") : "—");
 
-  // brain chips (events + special warnings)
+  // brain chips
   const bc = el("uiBrainChips");
-  bc.innerHTML = "";
-  if (risk !== null) setChip(bc, `riziko ${risk}/100`, riskClass(risk));
-  if (brain?.sampling) setChip(bc, `sampling: ${brain.sampling}`, (brain.sampling === "LOW") ? "warn" : "ok");
-  if (brain?.solar?.untilSunsetWh !== null && brain?.solar?.untilSunsetWh !== undefined) {
-    setChip(bc, `do západu ~${fmt1(Number(brain.solar.untilSunsetWh))} Wh`, "ok");
+  if (bc) {
+    bc.innerHTML = "";
+    if (risk !== null) setChip(bc, `riziko ${risk}/100`, riskClass(risk));
+    if (brain?.sampling) setChip(bc, `sampling: ${brain.sampling}`, (brain.sampling === "LOW") ? "warn" : "ok");
+    if (brain?.solar?.untilSunsetWh !== null && brain?.solar?.untilSunsetWh !== undefined) {
+      setChip(bc, `do západu ~${fmt1(Number(brain.solar.untilSunsetWh))} Wh`, "ok");
+    }
+    if (env.boxTempC !== undefined) {
+      const bt = Number(env.boxTempC);
+      setChip(bc, `box ${fmt1(bt)} °C`, (bt >= 45 || bt <= -10) ? "warn" : "ok");
+    }
+    if (env.thunder) setChip(bc, "bouřka", "bad");
+    if (env.events?.storm) setChip(bc, "storm event", "bad");
+    if (env.events?.gust) setChip(bc, "nárazy větru", "warn");
+    if (env.events?.fog) setChip(bc, "mlha", "warn");
+    if (env.snowing) setChip(bc, "sněžení", "warn");
   }
-  if (env.boxTempC !== undefined) {
-    const bt = Number(env.boxTempC);
-    setChip(bc, `box ${fmt1(bt)} °C`, (bt >= 45 || bt <= -10) ? "warn" : "ok");
-  }
-  if (env.thunder) setChip(bc, "bouřka", "bad");
-  if (env.events?.storm) setChip(bc, "storm event", "bad");
-  if (env.events?.gust) setChip(bc, "nárazy větru", "warn");
-  if (env.events?.fog) setChip(bc, "mlha", "warn");
-  if (env.snowing) setChip(bc, "sněžení", "warn");
 
   // risk trend
   if (risk !== null) {
     const series = pushRiskPoint(risk);
-    const canvas = el("riskCanvas");
-    drawRisk(canvas, series);
+    drawRisk(el("riskCanvas"), series);
   }
 
-  // energy prediction placeholders (if backend has prediction)
+  // energy prediction placeholders
   const pred = state?.prediction || null;
-  el("uiNet").textContent = pred?.netW !== undefined ? fmt1(Number(pred.netW)) : "—";
-  el("uiTodaySolarWh").textContent = pred?.todaySolarWh !== undefined ? fmt0(Number(pred.todaySolarWh)) : "—";
+  setText("uiNet", pred?.netW !== undefined ? fmt1(Number(pred.netW)) : "—");
+  setText("uiTodaySolarWh", pred?.todaySolarWh !== undefined ? fmt0(Number(pred.todaySolarWh)) : "—");
 
-  // history dumps (simple debug)
-  el("uiHistory").textContent = JSON.stringify(state?.memory?.days ?? [], null, 2);
-  el("uiWeeks").textContent = JSON.stringify(state?.memory?.weeks ?? [], null, 2);
+  // history dumps (debug)
+  setText("uiHistory", JSON.stringify(state?.memory?.days ?? [], null, 2));
+  setText("uiWeeks", JSON.stringify(state?.memory?.weeks ?? [], null, 2));
 
-  // status
-  el("statusText").textContent = "Dashboard • OK";
+  setText("statusText", "Dashboard • OK");
 }
 
 async function fetchState() {
   const backend = getBackend();
   const url = `${backend}/state`;
-
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.json();
@@ -263,9 +268,9 @@ function startLoop() {
       render(s);
 
       const raw = el("rawJson");
-      if (!raw.classList.contains("hidden")) raw.textContent = JSON.stringify(s, null, 2);
+      if (raw && !raw.classList.contains("hidden")) raw.textContent = JSON.stringify(s, null, 2);
     } catch (e) {
-      el("statusText").textContent = `Dashboard • chyba: ${e.message}`;
+      setText("statusText", `Dashboard • chyba: ${e.message}`);
     }
   }, intervalMs);
 }
@@ -278,31 +283,41 @@ function setupTabs() {
 
       const name = btn.getAttribute("data-tab");
       document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
-      el(`tab-${name}`).classList.add("active");
+      const panel = el(`tab-${name}`);
+      if (panel) panel.classList.add("active");
     });
   });
 }
 
 function setupSettings() {
-  el("backendUrl").value = getBackend();
+  // tyto prvky jsou volitelné – pokud nejsou, nic se nerozbije
+  const backendInput = el("backendUrl");
+  if (backendInput) backendInput.value = getBackend();
 
-  el("btnSave").addEventListener("click", () => {
-    setBackend(el("backendUrl").value);
-    el("healthOut").textContent = "Uloženo";
-    startLoop();
-  });
+  const btnSave = el("btnSave");
+  if (btnSave) {
+    btnSave.addEventListener("click", () => {
+      const v = backendInput ? backendInput.value : getBackend();
+      setBackend(v);
+      setText("healthOut", "Uloženo");
+      startLoop();
+    });
+  }
 
-  el("btnTest").addEventListener("click", async () => {
-    const backend = el("backendUrl").value.trim().replace(/\/+$/, "");
-    if (!backend) return;
+  const btnTest = el("btnTest");
+  if (btnTest) {
+    btnTest.addEventListener("click", async () => {
+      const backend = (backendInput ? backendInput.value : getBackend()).trim().replace(/\/+$/, "");
+      if (!backend) return;
 
-    try {
-      const res = await fetch(`${backend}/health`, { cache: "no-store" });
-      el("healthOut").textContent = res.ok ? "OK" : `HTTP ${res.status}`;
-    } catch (e) {
-      el("healthOut").textContent = `chyba: ${e.message}`;
-    }
-  });
+      try {
+        const res = await fetch(`${backend}/health`, { cache: "no-store" });
+        setText("healthOut", res.ok ? "OK" : `HTTP ${res.status}`);
+      } catch (e) {
+        setText("healthOut", `chyba: ${e.message}`);
+      }
+    });
+  }
 
   document.querySelectorAll(".chipBtn").forEach(b => {
     b.addEventListener("click", () => {
@@ -312,24 +327,25 @@ function setupSettings() {
     });
   });
 
-  // raw json toggle
+  // RAW JSON toggle (volitelné)
   const chk = el("chkRaw");
   const raw = el("rawJson");
-  chk.addEventListener("change", () => {
-    raw.classList.toggle("hidden", !chk.checked);
-  });
+  if (chk && raw) {
+    chk.addEventListener("change", () => {
+      raw.classList.toggle("hidden", !chk.checked);
+    });
+  }
 }
 
 (async function boot() {
   setupTabs();
   setupSettings();
 
-  // initial fetch once
   try {
     const s = await fetchState();
     render(s);
   } catch (e) {
-    el("statusText").textContent = `Dashboard • chyba: ${e.message}`;
+    setText("statusText", `Dashboard • chyba: ${e.message}`);
   }
 
   startLoop();
