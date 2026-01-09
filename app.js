@@ -3,11 +3,9 @@ const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railw
 const el = (id) => document.getElementById(id);
 const setText = (id, text) => { const e = el(id); if (e) e.textContent = text; };
 const setHref = (id, href) => { const e = el(id); if (e) e.href = href; };
-const setValue = (id, val) => { const e = el(id); if (e) e.value = val; };
 
 const fmt1 = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : "—");
 const fmt0 = (x) => (Number.isFinite(x) ? Math.round(x) : "—");
-
 function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
 
 function getBackend() {
@@ -18,18 +16,19 @@ function setBackend(url) {
   localStorage.setItem("backendUrl", url.trim().replace(/\/+$/, ""));
 }
 
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function riskClass(r) {
   if (r >= 70) return "bad";
   if (r >= 45) return "warn";
   return "ok";
-}
-
-function setChip(container, text, cls) {
-  if (!container) return;
-  const d = document.createElement("span");
-  d.className = `chip ${cls || ""}`.trim();
-  d.textContent = text;
-  container.appendChild(d);
 }
 
 function toHHMM(ts) {
@@ -41,7 +40,7 @@ function toHHMM(ts) {
 }
 
 /* ---------------------------
-   Timeline (B 3.26)
+   Timeline
 ---------------------------- */
 const TL_KEY = "timelineEvents_v1";
 function loadTL() { try { return JSON.parse(localStorage.getItem(TL_KEY) || "[]"); } catch { return []; } }
@@ -76,14 +75,6 @@ function renderTL() {
     `;
     box.appendChild(d);
   }
-}
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 /* ---------------------------
@@ -150,7 +141,7 @@ function drawRisk(canvas, series) {
 }
 
 /* ---------------------------
-   Charts
+   Charts (FIX: ruční sizing canvas, responsive OFF)
 ---------------------------- */
 let chartTemp = null;
 let chartPower = null;
@@ -158,8 +149,6 @@ let chartLight = null;
 let chartBrainRisk = null;
 let chartWeekTemp = null;
 let chartWeekEnergy = null;
-
-function destroyChart(ch) { if (ch && typeof ch.destroy === "function") ch.destroy(); }
 
 function normalizeSeries(dayObj, key) {
   const arr = Array.isArray(dayObj?.[key]) ? dayObj[key] : [];
@@ -174,17 +163,35 @@ function normalizeSeries(dayObj, key) {
   return { labels, data };
 }
 
+function setCanvasSize(canvas) {
+  if (!canvas) return;
+  const parent = canvas.parentElement;
+  if (!parent) return;
+
+  // Chart.js si bere velikost z width/height atributů když responsive:false
+  const w = Math.max(50, parent.clientWidth);
+  const h = Math.max(120, parent.clientHeight || 320);
+
+  // nastav jen když se liší (aby to neházelo layout sem a tam)
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+}
+
 function makeLineChart(canvasId, labels, datasets, yTitle = "") {
   const c = el(canvasId);
   if (!c || !window.Chart) return null;
+
+  // ✅ důležité: fixni velikost ještě před vytvořením grafu
+  setCanvasSize(c);
+
   return new Chart(c, {
     type: "line",
     data: { labels, datasets },
     options: {
-      responsive: true,
+      responsive: false,          // ✅ hlavní fix: žádné resize při scrollu
       maintainAspectRatio: false,
+      animation: false,
       interaction: { mode: "index", intersect: false },
-      animation: false,            // důležité pro stabilní layout
       plugins: { legend: { labels: { color: "#e9eefc" } } },
       scales: {
         x: { ticks: { color: "#9fb0d8", maxRotation: 0 }, grid: { color: "rgba(255,255,255,.06)" } },
@@ -200,10 +207,36 @@ function makeLineChart(canvasId, labels, datasets, yTitle = "") {
 
 function updateLineChart(chart, labels, datasets) {
   if (!chart) return;
+
+  // ✅ udrž velikost stabilní
+  setCanvasSize(chart.canvas);
+
   chart.data.labels = labels;
   chart.data.datasets = datasets;
-  chart.update("none"); // bez animace, bez resize skoků
+  chart.update("none");
 }
+
+function resizeAllCharts() {
+  const charts = [chartTemp, chartPower, chartLight, chartBrainRisk, chartWeekTemp, chartWeekEnergy].filter(Boolean);
+  for (const ch of charts) {
+    setCanvasSize(ch.canvas);
+    ch.resize();
+    ch.update("none");
+  }
+}
+
+function debounce(fn, ms) {
+  let t = null;
+  return (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+window.addEventListener("resize", debounce(() => {
+  // resize jen když už grafy existují
+  resizeAllCharts();
+}, 150));
 
 function alignTo(masterLabels, labels, data) {
   const map = new Map();
@@ -323,7 +356,6 @@ function renderDailySummary(day) {
   if (!Number.isFinite(outWh)) outWh = estimateWhFromWSeries(sOut.labels, sOut.data);
 
   const netWh = (Number.isFinite(inWh) && Number.isFinite(outWh)) ? (inWh - outWh) : null;
-
   const thunderCount = Number.isFinite(day?.thunderCount) ? day.thunderCount : 0;
 
   const headline = [];
@@ -406,12 +438,11 @@ function renderWeeklySummary(days) {
 }
 
 /* ---------------------------
-   History: render jen když je potřeba (FIX "ujíždění")
+   History: render jen když je potřeba
 ---------------------------- */
 let lastState = null;
 let currentDayIndex = 0;
 
-// hlídáme kdy je potřeba re-render historie
 let lastHistorySignature = "";
 let lastHistoryDayIndex = -1;
 let historyChartsInitialized = false;
@@ -553,7 +584,6 @@ function renderHistoryCharts(state) {
 
   setText("dayInfo", `Vybráno: ${dayKey} • vzorků T:${sTemp.data.filter(v=>v!==null).length} S:${sIn.data.filter(v=>v!==null).length} Z:${sOut.data.filter(v=>v!==null).length}`);
 
-  // Teplota
   if (!chartTemp) {
     chartTemp = makeLineChart("chartTemp", sTemp.labels, [
       { label: "Teplota (°C)", data: sTemp.data, tension: 0.25, pointRadius: 0 }
@@ -564,7 +594,6 @@ function renderHistoryCharts(state) {
     ]);
   }
 
-  // Power (sladíme labely)
   const labelsPower = (sIn.labels.length >= sOut.labels.length) ? sIn.labels : sOut.labels;
   const dsPower = [
     { label: "Solár (W)", data: alignTo(labelsPower, sIn.labels, sIn.data), tension: 0.25, pointRadius: 0 },
@@ -573,7 +602,6 @@ function renderHistoryCharts(state) {
   if (!chartPower) chartPower = makeLineChart("chartPower", labelsPower, dsPower, "W");
   else updateLineChart(chartPower, labelsPower, dsPower);
 
-  // Světlo
   if (!chartLight) {
     chartLight = makeLineChart("chartLight", sLight.labels, [
       { label: "Světlo (lx)", data: sLight.data, tension: 0.25, pointRadius: 0 }
@@ -584,7 +612,6 @@ function renderHistoryCharts(state) {
     ]);
   }
 
-  // Riziko (pokud existuje)
   if (!chartBrainRisk) {
     chartBrainRisk = makeLineChart("chartBrainRisk", sRisk.labels, [
       { label: "Riziko (0–100)", data: sRisk.data, tension: 0.25, pointRadius: 0 }
@@ -600,6 +627,9 @@ function renderHistoryCharts(state) {
 
   currentDayIndex = idx;
   historyChartsInitialized = true;
+
+  // ✅ po vykreslení jednou srovnej size všech grafů (na jistotu)
+  resizeAllCharts();
 }
 
 function maybeUpdateHistory(state, force = false) {
@@ -610,10 +640,6 @@ function maybeUpdateHistory(state, force = false) {
   const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
   const idx = chooseDayIndex(days);
 
-  // aktualizuj jen pokud:
-  // - poprvé (grafy nejsou init)
-  // - změnil se vybraný den
-  // - změnila se historie (signature)
   const selectedIdx = Number(el("daySelect")?.value);
   const effectiveIdx = Number.isFinite(selectedIdx) ? selectedIdx : idx;
 
@@ -632,91 +658,8 @@ function maybeUpdateHistory(state, force = false) {
 }
 
 /* ---------------------------
-   Export (B 3.27)
----------------------------- */
-function downloadText(filename, text, mime = "text/plain") {
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-function exportJSON(filename, obj) { downloadText(filename, JSON.stringify(obj, null, 2), "application/json"); }
-
-function csvFromSeries(labels, cols) {
-  const esc = (s) => `"${String(s ?? "").replaceAll('"', '""')}"`;
-  const header = ["t", ...cols.map(c => c.name)].map(esc).join(",");
-  const lines = [header];
-  for (let i = 0; i < labels.length; i++) {
-    const row = [labels[i], ...cols.map(c => c.data[i] ?? "")].map(esc).join(",");
-    lines.push(row);
-  }
-  return lines.join("\n");
-}
-
-function safeName(day) {
-  const key = day?.key || day?.dayKey || day?.date || `day_${currentDayIndex + 1}`;
-  return String(key).replaceAll(":", "-").replaceAll(" ", "_");
-}
-
-function wireExports() {
-  const btnState = el("btnExportState");
-  const btnMem = el("btnExportMemory");
-  const btnCSVTemp = el("btnExportCSVTemp");
-  const btnCSVPower = el("btnExportCSVPower");
-  const btnCSVLight = el("btnExportCSVLight");
-
-  if (btnState) btnState.onclick = () => { if (lastState) exportJSON(`meteostanice_state_${Date.now()}.json`, lastState); };
-  if (btnMem) btnMem.onclick = () => { exportJSON(`meteostanice_memory_days_${Date.now()}.json`, lastState?.memory?.days ?? []); };
-
-  if (btnCSVTemp) btnCSVTemp.onclick = () => {
-    const day = (lastState?.memory?.days ?? [])[currentDayIndex] || {};
-    const s = normalizeSeries(day, "temperature");
-    const csv = csvFromSeries(s.labels, [{ name: "temperatureC", data: s.data }]);
-    downloadText(`day_temperature_${safeName(day)}.csv`, csv, "text/csv");
-  };
-
-  if (btnCSVPower) btnCSVPower.onclick = () => {
-    const day = (lastState?.memory?.days ?? [])[currentDayIndex] || {};
-    const sIn = normalizeSeries(day, "energyIn");
-    const sOut = normalizeSeries(day, "energyOut");
-    const labels = (sIn.labels.length >= sOut.labels.length) ? sIn.labels : sOut.labels;
-    const csv = csvFromSeries(labels, [
-      { name: "solarW", data: alignTo(labels, sIn.labels, sIn.data) },
-      { name: "loadW", data: alignTo(labels, sOut.labels, sOut.data) }
-    ]);
-    downloadText(`day_power_${safeName(day)}.csv`, csv, "text/csv");
-  };
-
-  if (btnCSVLight) btnCSVLight.onclick = () => {
-    const day = (lastState?.memory?.days ?? [])[currentDayIndex] || {};
-    const s = normalizeSeries(day, "light");
-    const csv = csvFromSeries(s.labels, [{ name: "lightLux", data: s.data }]);
-    downloadText(`day_light_${safeName(day)}.csv`, csv, "text/csv");
-  };
-}
-
-/* ---------------------------
    UI render (DNES + ENERGIE)
 ---------------------------- */
-function setModeBadge(badgeEl, mode, risk) {
-  if (!badgeEl) return;
-  badgeEl.textContent = mode || "—";
-  const cls = riskClass(risk);
-  badgeEl.style.borderColor =
-    cls === "bad" ? "rgba(255,92,124,.45)" :
-    cls === "warn" ? "rgba(255,209,102,.45)" :
-    "rgba(83,227,166,.45)";
-  badgeEl.style.background =
-    cls === "bad" ? "rgba(255,92,124,.10)" :
-    cls === "warn" ? "rgba(255,209,102,.10)" :
-    "rgba(83,227,166,.10)";
-}
-
 let lastMode = "";
 function render(state) {
   lastState = state;
@@ -744,100 +687,37 @@ function render(state) {
   setText("uiLoad", fmt1(Number(load)));
   setText("uiFan", (fan === true) ? "ON" : (fan === false) ? "OFF" : "—");
 
-  setText("uiSolar2", fmt1(Number(solar)));
-  setText("uiSoc2", (soc === null || soc === undefined) ? "—" : fmt0(Number(soc)));
-  setText("uiLoad2", fmt1(Number(load)));
-
   setText("uiMsg", state?.message || "—");
   const det = Array.isArray(state?.details) ? state.details.join(" • ") : (state?.details || "—");
   setText("uiDetails", det || "—");
 
-  const wc = el("uiWeatherChips");
-  if (wc) {
-    wc.innerHTML = "";
-    if (env.summary?.sky) setChip(wc, env.summary.sky, "ok");
-    if (env.summary?.precip) setChip(wc, env.summary.precip, (env.raining || env.snowing) ? "warn" : "ok");
-    if (env.summary?.wind) setChip(wc, `vítr: ${env.summary.wind}`, (env.windMs >= 12) ? "warn" : "ok");
-    if (env.thunder) setChip(wc, "bouřka", "bad");
-    if (env.events?.fog) setChip(wc, "mlha", "warn");
-    if (env.events?.gust) setChip(wc, "nárazy", "warn");
-  }
-
   const brain = state?.brain || {};
   const risk = Number.isFinite(brain?.risk) ? brain.risk : null;
   const mode = brain?.mode || "—";
-  setText("uiRisk", (risk === null) ? "—" : String(risk));
 
-  const rf = el("uiRiskBar");
-  if (rf) {
-    rf.style.width = `${clamp(risk ?? 0, 0, 100)}%`;
-    const rc = riskClass(risk ?? 0);
-    rf.style.background =
-      rc === "bad" ? "linear-gradient(90deg, rgba(255,92,124,.95), rgba(255,209,102,.65))" :
-      rc === "warn" ? "linear-gradient(90deg, rgba(255,209,102,.95), rgba(124,192,255,.65))" :
-      "linear-gradient(90deg, rgba(83,227,166,.95), rgba(124,192,255,.75))";
+  // timeline – jen při změně režimu
+  if (mode && mode !== "—" && mode !== lastMode) {
+    pushTL("mode", "Režim mozku", `Aktuálně: ${mode}`);
+    lastMode = mode;
   }
-  setModeBadge(el("uiModeBadge"), mode, risk ?? 0);
+  renderTL();
 
-  const bh = brain?.battery?.hours;
-  setText("uiBatHours", (bh === null || bh === undefined) ? "—" : fmt1(Number(bh)));
-  setText("uiBatHours2", (bh === null || bh === undefined) ? "—" : fmt1(Number(bh)));
-  setText("uiBatHint", (soc === null || soc === undefined) ? "—" : `SOC ${fmt0(Number(soc))} %`);
+  // ✅ KLÍČ: historie se nebude hýbat při scrollu, a aktualizuje se jen při změně
+  maybeUpdateHistory(state);
 
-  const sun = env.sun || {};
-  const sunset = sun.sunsetTs ? toHHMM(sun.sunsetTs) : null;
-  const sunrise = sun.sunriseTs ? toHHMM(sun.sunriseTs) : null;
-  const dayMin = Number.isFinite(sun.daylightMin) ? sun.daylightMin : null;
+  setText("statusText", "Dashboard • OK");
 
-  const hToSunset = brain?.time?.hoursToSunset;
-  const hToSunrise = brain?.time?.hoursToSunrise;
-
-  setText("uiSunLine", (sunrise && sunset) ? `🌅 ${sunrise}  •  🌇 ${sunset}` : "—");
-  const sunBits = [];
-  if (Number.isFinite(hToSunset)) sunBits.push(`do západu ${fmt1(hToSunset)} h`);
-  if (Number.isFinite(hToSunrise)) sunBits.push(`do východu ${fmt1(hToSunrise)} h`);
-  if (dayMin !== null) sunBits.push(`den ${fmt0(dayMin)} min`);
-  setText("uiSunHint", sunBits.length ? sunBits.join(" • ") : "—");
-
-  const bc = el("uiBrainChips");
-  if (bc) {
-    bc.innerHTML = "";
-    if (risk !== null) setChip(bc, `riziko ${risk}/100`, riskClass(risk));
-    if (brain?.sampling) setChip(bc, `sampling: ${brain.sampling}`, (brain.sampling === "LOW") ? "warn" : "ok");
-    if (brain?.solar?.untilSunsetWh !== null && brain?.solar?.untilSunsetWh !== undefined) {
-      setChip(bc, `do západu ~${fmt1(Number(brain.solar.untilSunsetWh))} Wh`, "ok");
-    }
-    if (env.boxTempC !== undefined) {
-      const bt = Number(env.boxTempC);
-      setChip(bc, `box ${fmt1(bt)} °C`, (bt >= 45 || bt <= -10) ? "warn" : "ok");
-    }
-    if (env.thunder) setChip(bc, "bouřka", "bad");
-    if (env.events?.storm) setChip(bc, "storm event", "bad");
-    if (env.events?.gust) setChip(bc, "nárazy větru", "warn");
-    if (env.events?.fog) setChip(bc, "mlha", "warn");
-    if (env.snowing) setChip(bc, "sněžení", "warn");
-  }
-
+  // risk canvas
   if (risk !== null) {
     const series = pushRiskPoint(risk);
     drawRisk(el("riskCanvas"), series);
   }
 
-  // timeline – nepiš každý tick stejné
-  if (mode && mode !== "—" && mode !== lastMode) {
-    pushTL("mode", "Režim mozku", `Aktuálně: ${mode}`);
-    lastMode = mode;
-  }
-  if (env.thunder || env.events?.storm) pushTL("storm", "Bouřka / storm", "Zaznamenána bouřková aktivita.");
-  if (env.events?.fog) pushTL("fog", "Mlha", "Zhoršená viditelnost (mlha).");
-  if (env.events?.gust) pushTL("gust", "Nárazy větru", `Vítr: ${fmt1(Number(env.windMs ?? 0))} m/s`);
-  if (env.snowing) pushTL("snow", "Sněžení", `Sníh: ${fmt1(Number(env.snowDepthCm ?? 0))} cm`);
-  renderTL();
-
-  // ✅ KLÍČOVÝ FIX: historie se NEPŘEKRESLUJE každou sekundu
-  maybeUpdateHistory(state);
-
-  setText("statusText", "Dashboard • OK");
+  // Sun line
+  const sun = env.sun || {};
+  const sunset = sun.sunsetTs ? toHHMM(sun.sunsetTs) : null;
+  const sunrise = sun.sunriseTs ? toHHMM(sun.sunriseTs) : null;
+  setText("uiSunLine", (sunrise && sunset) ? `🌅 ${sunrise}  •  🌇 ${sunset}` : "—");
 }
 
 /* ---------------------------
@@ -881,9 +761,10 @@ function setupTabs() {
       const panel = el(`tab-${name}`);
       if (panel) panel.classList.add("active");
 
-      // když přepnu na historii, hned jednou vykresli
+      // ✅ při přepnutí na historii: jednou vykresli + resize grafů (na jistotu)
       if (name === "history" && lastState) {
         maybeUpdateHistory(lastState, true);
+        resizeAllCharts();
       }
     });
   });
@@ -942,6 +823,7 @@ function setupHistoryControls() {
         setDayIndex(idx);
         currentDayIndex = idx;
         if (lastState) maybeUpdateHistory(lastState, true);
+        resizeAllCharts();
       }
     });
   }
@@ -954,6 +836,7 @@ function setupHistoryControls() {
     currentDayIndex = idx;
     if (sel) sel.value = String(idx);
     if (lastState) maybeUpdateHistory(lastState, true);
+    resizeAllCharts();
   });
 
   if (next) next.addEventListener("click", () => {
@@ -964,6 +847,7 @@ function setupHistoryControls() {
     currentDayIndex = idx;
     if (sel) sel.value = String(idx);
     if (lastState) maybeUpdateHistory(lastState, true);
+    resizeAllCharts();
   });
 }
 
@@ -971,13 +855,10 @@ function setupHistoryControls() {
   setupTabs();
   setupSettings();
   setupHistoryControls();
-  wireExports();
 
   try {
     const s = await fetchState();
     render(s);
-    // při startu nevynucuj historii (pokud nejsi na historii)
-    // vykreslí se až při přepnutí na tab, nebo změně signature
   } catch (e) {
     setText("statusText", `Dashboard • chyba: ${e.message}`);
   }
