@@ -398,10 +398,10 @@ function renderWeeklySummary(days) {
         globalMax = Math.max(globalMax, v);
       }
 
-      let inWh = pickNumber(d, ["energyInWh","solarWh","inWh","dayInWh"]);
-      let outWh = pickNumber(d, ["energyOutWh","loadWh","outWh","dayOutWh"]);
-      const ti = pickNumber(d?.totals, ["energyInWh","solarWh","inWh"]);
-      const to = pickNumber(d?.totals, ["energyOutWh","loadWh","outWh"]);
+      let inWh = pickNumber(d, ["energyInWh", "solarWh", "inWh", "dayInWh"]);
+      let outWh = pickNumber(d, ["energyOutWh", "loadWh", "outWh", "dayOutWh"]);
+      const ti = pickNumber(d?.totals, ["energyInWh", "solarWh", "inWh"]);
+      const to = pickNumber(d?.totals, ["energyOutWh", "loadWh", "outWh"]);
       if (!Number.isFinite(inWh) && Number.isFinite(ti)) inWh = ti;
       if (!Number.isFinite(outWh) && Number.isFinite(to)) outWh = to;
 
@@ -449,15 +449,10 @@ let lastHistoryDayIndex = -1;
 let historyChartsInitialized = false;
 
 // ✅ HISTORIE = memory.days + živý "dnes" (memory.today)
-// Problém „statický graf“ byl typicky tím, že uživatel koukal na poslední den,
-// ale ten byl uložený v memory.days (uzavřený) a aktuální den se dál loguje do memory.today.
-// Tady to sjednotíme do jednoho seznamu, aby poslední položka (Dnes) byla živá a grafy se hýbaly.
-
 function getHistoryDays(state) {
   const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
   const today = state?.memory?.today;
 
-  // když dnes nemáme vůbec nic, vrať jen historii
   const hasTodaySeries =
     Array.isArray(today?.temperature) && today.temperature.length > 0 ||
     Array.isArray(today?.energyIn) && today.energyIn.length > 0 ||
@@ -467,7 +462,7 @@ function getHistoryDays(state) {
 
   if (!today || !today.key || !hasTodaySeries) return days;
 
-  // nepřidávej duplicitně, kdyby už server někdy dnes ukládal do days
+  // nepřidávej duplicitně
   const last = days[days.length - 1];
   const lastKey = last?.key || last?.dayKey || last?.date || null;
   if (lastKey && String(lastKey) === String(today.key)) return days;
@@ -480,16 +475,23 @@ function isHistoryTabActive() {
   return btn?.getAttribute("data-tab") === "history";
 }
 
-function historySignatureFromState(state) {
+// ✅ podpis historie musí reflektovat *vybraný den*, ne jen poslední den.
+function historySignatureFromState(state, dayIndex) {
   const days = getHistoryDays(state);
   if (!days.length) return "0";
-  const last = days[days.length - 1];
-  const lastKey = last?.key || last?.dayKey || last?.date || "";
-  const lastLenT = Array.isArray(last?.temperature) ? last.temperature.length : 0;
-  const lastLenIn = Array.isArray(last?.energyIn) ? last.energyIn.length : 0;
-  const lastLenOut = Array.isArray(last?.energyOut) ? last.energyOut.length : 0;
-  const lastLenL = Array.isArray(last?.light) ? last.light.length : 0;
-  return `${days.length}|${lastKey}|${lastLenT}|${lastLenIn}|${lastLenOut}|${lastLenL}`;
+
+  const idx = Number.isFinite(dayIndex)
+    ? Math.max(0, Math.min(days.length - 1, dayIndex))
+    : Math.max(0, days.length - 1);
+
+  const d = days[idx] || {};
+  const key = d?.key || d?.dayKey || d?.date || "";
+  const lenT = Array.isArray(d?.temperature) ? d.temperature.length : 0;
+  const lenIn = Array.isArray(d?.energyIn) ? d.energyIn.length : 0;
+  const lenOut = Array.isArray(d?.energyOut) ? d.energyOut.length : 0;
+  const lenL = Array.isArray(d?.light) ? d.light.length : 0;
+  const lenR = Array.isArray(d?.risk) ? d.risk.length : 0;
+  return `${days.length}|${idx}|${key}|${lenT}|${lenIn}|${lenOut}|${lenL}|${lenR}`;
 }
 
 function renderWeeklyCharts(days) {
@@ -656,7 +658,6 @@ function renderHistoryCharts(state) {
   currentDayIndex = idx;
   historyChartsInitialized = true;
 
-  // ✅ po vykreslení jednou srovnej size všech grafů (na jistotu)
   resizeAllCharts();
 }
 
@@ -664,12 +665,12 @@ function maybeUpdateHistory(state, force = false) {
   if (!state) return;
   if (!isHistoryTabActive() && !force) return;
 
-  const sig = historySignatureFromState(state);
   const days = getHistoryDays(state);
-  const idx = chooseDayIndex(days);
-
+  const fallbackIdx = chooseDayIndex(days);
   const selectedIdx = Number(el("daySelect")?.value);
-  const effectiveIdx = Number.isFinite(selectedIdx) ? selectedIdx : idx;
+  const effectiveIdx = Number.isFinite(selectedIdx) ? selectedIdx : fallbackIdx;
+
+  const sig = historySignatureFromState(state, effectiveIdx);
 
   const need =
     force ||
@@ -723,31 +724,26 @@ function render(state) {
   const risk = Number.isFinite(brain?.risk) ? brain.risk : null;
   const mode = brain?.mode || "—";
 
-  // timeline – jen při změně režimu
   if (mode && mode !== "—" && mode !== lastMode) {
     pushTL("mode", "Režim mozku", `Aktuálně: ${mode}`);
     lastMode = mode;
   }
   renderTL();
 
-  // ✅ KLÍČ: historie se nebude hýbat při scrollu, a aktualizuje se jen při změně
   maybeUpdateHistory(state);
 
   setText("statusText", "Dashboard • OK");
 
-  // risk canvas
   if (risk !== null) {
     const series = pushRiskPoint(risk);
     drawRisk(el("riskCanvas"), series);
   }
 
-  // Sun line
   const sun = env.sun || {};
   const sunset = sun.sunsetTs ? toHHMM(sun.sunsetTs) : null;
   const sunrise = sun.sunriseTs ? toHHMM(sun.sunriseTs) : null;
   setText("uiSunLine", (sunrise && sunset) ? `🌅 ${sunrise}  •  🌇 ${sunset}` : "—");
 
-  // raw json
   const raw = el("rawJson");
   if (raw) raw.textContent = JSON.stringify(state, null, 2);
 }
@@ -788,7 +784,6 @@ function setupTabs() {
       document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
       el(`view-${name}`)?.classList.remove("hidden");
 
-      // když přepneš na historii, donuť refresh (kvůli sizingu)
       if (name === "history" && lastState) {
         maybeUpdateHistory(lastState, true);
         resizeAllCharts();
