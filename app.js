@@ -218,6 +218,7 @@ window.addEventListener("resize", () => {
 
 // ---------------------------
 // riskCanvas (ne Chart.js – jednoduchý sparkline)
+// riskCanvas (ne Chart.js – jednoduchý sparkline)
 // ---------------------------
 function drawRiskCanvas(points) {
   const c = el("riskCanvas");
@@ -318,10 +319,21 @@ function renderTodayCards(s) {
   const hum = num(env.humidity, num(deepGet(s, "device.humidity")));
   const boxT = num(env.boxTempC, num(env.temperature, NaN));
 
+  // T 3.31.0 / B 3.32.0: world metadata
+  const scenario = deepGet(s, "world.environment.scenario", env.scenario, "—");
+  const phase = deepGet(s, "world.cycle.phase", env.phase, "—");
+  const dayIn21 = num(deepGet(s, "world.cycle.day"), NaN);
+  const solarPotW = num(env.solarPotentialW, NaN);
+
   setText("uiLight", fmt0(lightLux));
   setText("uiTemp", fmt1(airTemp));
   setText("uiHum", fmt0(hum));
   setText("uiBoxTemp", fmt1(boxT));
+
+  setText("uiOutdoorTemp", fmt1(airTemp));
+  setText("uiSolarPot", Number.isFinite(solarPotW) ? fmt2(solarPotW) : "—");
+  setText("uiScenario", scenario || "—");
+  setText("uiPhase", (phase ? String(phase) : "—") + (Number.isFinite(dayIn21) ? ` (den ${fmt0(dayIn21)}/21)` : ""));
 
   const soc = num(deepGet(s, "brain.battery.socPercent"),
     num(deepGet(s, "device.battery.percent"),
@@ -428,7 +440,6 @@ function renderEnergyTab(s) {
   const todayInWh = num(deepGet(s, "memory.today.totals.energyInWh", NaN), NaN);
   setText("uiTodaySolarWh", Number.isFinite(todayInWh) ? fmt1(todayInWh) : "—");
 }
-
 function renderCharts(s) {
   ensureCharts();
 
