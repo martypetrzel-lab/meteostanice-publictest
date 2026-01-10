@@ -251,7 +251,8 @@ function fillDaySelect(days) {
   sel.innerHTML = "";
   for (let i = 0; i < days.length; i++) {
     const d = days[i];
-    const key = d?.key || d?.dayKey || d?.date || `den ${i + 1}`;
+    const baseKey = d?.key || d?.dayKey || d?.date || `den ${i + 1}`;
+    const key = d?._isLive ? `${baseKey} (dnes)` : baseKey;
     const opt = document.createElement("option");
     opt.value = String(i);
     opt.textContent = key;
@@ -447,13 +448,40 @@ let lastHistorySignature = "";
 let lastHistoryDayIndex = -1;
 let historyChartsInitialized = false;
 
+// ✅ HISTORIE = memory.days + živý "dnes" (memory.today)
+// Problém „statický graf“ byl typicky tím, že uživatel koukal na poslední den,
+// ale ten byl uložený v memory.days (uzavřený) a aktuální den se dál loguje do memory.today.
+// Tady to sjednotíme do jednoho seznamu, aby poslední položka (Dnes) byla živá a grafy se hýbaly.
+
+function getHistoryDays(state) {
+  const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
+  const today = state?.memory?.today;
+
+  // když dnes nemáme vůbec nic, vrať jen historii
+  const hasTodaySeries =
+    Array.isArray(today?.temperature) && today.temperature.length > 0 ||
+    Array.isArray(today?.energyIn) && today.energyIn.length > 0 ||
+    Array.isArray(today?.energyOut) && today.energyOut.length > 0 ||
+    Array.isArray(today?.light) && today.light.length > 0 ||
+    Array.isArray(today?.risk) && today.risk.length > 0;
+
+  if (!today || !today.key || !hasTodaySeries) return days;
+
+  // nepřidávej duplicitně, kdyby už server někdy dnes ukládal do days
+  const last = days[days.length - 1];
+  const lastKey = last?.key || last?.dayKey || last?.date || null;
+  if (lastKey && String(lastKey) === String(today.key)) return days;
+
+  return [...days, { ...today, _isLive: true }];
+}
+
 function isHistoryTabActive() {
   const btn = document.querySelector(".tab.active");
   return btn?.getAttribute("data-tab") === "history";
 }
 
 function historySignatureFromState(state) {
-  const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
+  const days = getHistoryDays(state);
   if (!days.length) return "0";
   const last = days[days.length - 1];
   const lastKey = last?.key || last?.dayKey || last?.date || "";
@@ -560,9 +588,9 @@ function renderWeeklyCharts(days) {
 }
 
 function renderHistoryCharts(state) {
-  const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
+  const days = getHistoryDays(state);
   if (!days.length) {
-    setText("dayInfo", "Žádná historie v memory.days");
+    setText("dayInfo", "Žádná historie (zatím nemám data)");
     return;
   }
 
@@ -582,7 +610,7 @@ function renderHistoryCharts(state) {
   const sLight = normalizeSeries(day, "light");
   const sRisk = normalizeSeries(day, "risk");
 
-  setText("dayInfo", `Vybráno: ${dayKey} • vzorků T:${sTemp.data.filter(v=>v!==null).length} S:${sIn.data.filter(v=>v!==null).length} Z:${sOut.data.filter(v=>v!==null).length}`);
+  setText("dayInfo", `Vybráno: ${dayKey}${day?._isLive ? " (dnes)" : ""} • vzorků T:${sTemp.data.filter(v=>v!==null).length} S:${sIn.data.filter(v=>v!==null).length} Z:${sOut.data.filter(v=>v!==null).length}`);
 
   if (!chartTemp) {
     chartTemp = makeLineChart("chartTemp", sTemp.labels, [
@@ -637,7 +665,7 @@ function maybeUpdateHistory(state, force = false) {
   if (!isHistoryTabActive() && !force) return;
 
   const sig = historySignatureFromState(state);
-  const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
+  const days = getHistoryDays(state);
   const idx = chooseDayIndex(days);
 
   const selectedIdx = Number(el("daySelect")?.value);
@@ -718,50 +746,49 @@ function render(state) {
   const sunset = sun.sunsetTs ? toHHMM(sun.sunsetTs) : null;
   const sunrise = sun.sunriseTs ? toHHMM(sun.sunriseTs) : null;
   setText("uiSunLine", (sunrise && sunset) ? `🌅 ${sunrise}  •  🌇 ${sunset}` : "—");
+
+  // raw json
+  const raw = el("rawJson");
+  if (raw) raw.textContent = JSON.stringify(state, null, 2);
 }
 
 /* ---------------------------
-   Fetch loop
+   Tabs + settings + fetch loop
 ---------------------------- */
+let intervalMs = Number(localStorage.getItem("refreshInterval") || "1000");
+let loopTimer = null;
+
 async function fetchState() {
   const backend = getBackend();
-  const url = `${backend}/state`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return await res.json();
+  const r = await fetch(`${backend}/state`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return await r.json();
 }
 
-let timer = null;
-let intervalMs = Number(localStorage.getItem("refreshInterval") || "1000");
-
 function startLoop() {
-  if (timer) clearInterval(timer);
-  timer = setInterval(async () => {
+  if (loopTimer) clearInterval(loopTimer);
+  const run = async () => {
     try {
       const s = await fetchState();
       render(s);
-      const raw = el("rawJson");
-      if (raw && !raw.classList.contains("hidden")) raw.textContent = JSON.stringify(s, null, 2);
     } catch (e) {
       setText("statusText", `Dashboard • chyba: ${e.message}`);
     }
-  }, intervalMs);
+  };
+  run();
+  loopTimer = setInterval(run, Math.max(400, intervalMs));
 }
 
-/* ---------------------------
-   Tabs + Settings + History controls
----------------------------- */
 function setupTabs() {
-  document.querySelectorAll(".tab").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      const name = btn.getAttribute("data-tab");
-      document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
-      const panel = el(`tab-${name}`);
-      if (panel) panel.classList.add("active");
+  document.querySelectorAll(".tab").forEach(t => {
+    t.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      const name = t.getAttribute("data-tab");
+      document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+      el(`view-${name}`)?.classList.remove("hidden");
 
-      // ✅ při přepnutí na historii: jednou vykresli + resize grafů (na jistotu)
+      // když přepneš na historii, donuť refresh (kvůli sizingu)
       if (name === "history" && lastState) {
         maybeUpdateHistory(lastState, true);
         resizeAllCharts();
@@ -771,23 +798,25 @@ function setupTabs() {
 }
 
 function setupSettings() {
-  const backendInput = el("backendUrl");
-  if (backendInput) backendInput.value = getBackend();
+  const inp = el("backendInp");
+  const btn = el("backendSave");
+  const out = el("backendOut");
+  const healthBtn = el("btnHealth");
+  const healthOut = el("healthOut");
 
-  const btnSave = el("btnSave");
-  if (btnSave) {
-    btnSave.addEventListener("click", () => {
-      const v = backendInput ? backendInput.value : getBackend();
-      setBackend(v);
-      setText("healthOut", "Uloženo");
+  if (inp) inp.value = getBackend();
+
+  if (btn && inp) {
+    btn.addEventListener("click", () => {
+      setBackend(inp.value);
+      if (out) out.textContent = "Uloženo ✅";
       startLoop();
     });
   }
 
-  const btnTest = el("btnTest");
-  if (btnTest) {
-    btnTest.addEventListener("click", async () => {
-      const backend = (backendInput ? backendInput.value : getBackend()).trim().replace(/\/+$/, "");
+  if (healthBtn) {
+    healthBtn.addEventListener("click", async () => {
+      const backend = getBackend();
       if (!backend) return;
       try {
         const res = await fetch(`${backend}/health`, { cache: "no-store" });
@@ -829,8 +858,9 @@ function setupHistoryControls() {
   }
 
   if (prev) prev.addEventListener("click", () => {
-    if (!lastState?.memory?.days?.length) return;
-    let idx = chooseDayIndex(lastState.memory.days);
+    const days = getHistoryDays(lastState);
+    if (!days.length) return;
+    let idx = chooseDayIndex(days);
     idx = Math.max(0, idx - 1);
     setDayIndex(idx);
     currentDayIndex = idx;
@@ -840,9 +870,10 @@ function setupHistoryControls() {
   });
 
   if (next) next.addEventListener("click", () => {
-    if (!lastState?.memory?.days?.length) return;
-    let idx = chooseDayIndex(lastState.memory.days);
-    idx = Math.min(lastState.memory.days.length - 1, idx + 1);
+    const days = getHistoryDays(lastState);
+    if (!days.length) return;
+    let idx = chooseDayIndex(days);
+    idx = Math.min(days.length - 1, idx + 1);
     setDayIndex(idx);
     currentDayIndex = idx;
     if (sel) sel.value = String(idx);
