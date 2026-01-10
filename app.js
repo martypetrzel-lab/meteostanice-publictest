@@ -168,9 +168,11 @@ function setCanvasSize(canvas) {
   const parent = canvas.parentElement;
   if (!parent) return;
 
+  // Chart.js si bere velikost z width/height atributů když responsive:false
   const w = Math.max(50, parent.clientWidth);
   const h = Math.max(120, parent.clientHeight || 320);
 
+  // nastav jen když se liší (aby to neházelo layout sem a tam)
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
 }
@@ -179,13 +181,14 @@ function makeLineChart(canvasId, labels, datasets, yTitle = "") {
   const c = el(canvasId);
   if (!c || !window.Chart) return null;
 
+  // ✅ důležité: fixni velikost ještě před vytvořením grafu
   setCanvasSize(c);
 
   return new Chart(c, {
     type: "line",
     data: { labels, datasets },
     options: {
-      responsive: false,
+      responsive: false,          // ✅ hlavní fix: žádné resize při scrollu
       maintainAspectRatio: false,
       animation: false,
       interaction: { mode: "index", intersect: false },
@@ -205,6 +208,7 @@ function makeLineChart(canvasId, labels, datasets, yTitle = "") {
 function updateLineChart(chart, labels, datasets) {
   if (!chart) return;
 
+  // ✅ udrž velikost stabilní
   setCanvasSize(chart.canvas);
 
   chart.data.labels = labels;
@@ -230,6 +234,7 @@ function debounce(fn, ms) {
 }
 
 window.addEventListener("resize", debounce(() => {
+  // resize jen když už grafy existují
   resizeAllCharts();
 }, 150));
 
@@ -273,7 +278,7 @@ function pickNumber(obj, keys) {
 }
 
 /* ---------------------------
-   Summary helpers
+   Summary (Variant B)
 ---------------------------- */
 function statsOf(arr) {
   const xs = arr.filter(v => Number.isFinite(v));
@@ -375,15 +380,75 @@ function renderDailySummary(day) {
   setText("daySummaryNote", makeDailySentence({ maxRisk: stR.max, netWh, thunderCount }));
 }
 
+function renderWeeklySummary(days) {
+  const weeks = [];
+  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+
+  let globalMin = Infinity, globalMax = -Infinity;
+  let sumIn = 0, sumOut = 0;
+  let okIn = false, okOut = false;
+
+  for (const w of weeks) {
+    for (const d of w) {
+      const tArr = Array.isArray(d?.temperature) ? d.temperature : [];
+      for (const p of tArr) {
+        const v = Number(p?.v);
+        if (!Number.isFinite(v)) continue;
+        globalMin = Math.min(globalMin, v);
+        globalMax = Math.max(globalMax, v);
+      }
+
+      let inWh = pickNumber(d, ["energyInWh", "solarWh", "inWh", "dayInWh"]);
+      let outWh = pickNumber(d, ["energyOutWh", "loadWh", "outWh", "dayOutWh"]);
+      const ti = pickNumber(d?.totals, ["energyInWh", "solarWh", "inWh"]);
+      const to = pickNumber(d?.totals, ["energyOutWh", "loadWh", "outWh"]);
+      if (!Number.isFinite(inWh) && Number.isFinite(ti)) inWh = ti;
+      if (!Number.isFinite(outWh) && Number.isFinite(to)) outWh = to;
+
+      if (!Number.isFinite(inWh)) {
+        const sIn = normalizeSeries(d, "energyIn");
+        inWh = estimateWhFromWSeries(sIn.labels, sIn.data);
+      }
+      if (!Number.isFinite(outWh)) {
+        const sOut = normalizeSeries(d, "energyOut");
+        outWh = estimateWhFromWSeries(sOut.labels, sOut.data);
+      }
+
+      if (Number.isFinite(inWh)) { sumIn += inWh; okIn = true; }
+      if (Number.isFinite(outWh)) { sumOut += outWh; okOut = true; }
+    }
+  }
+
+  const net = (okIn && okOut) ? (sumIn - sumOut) : null;
+
+  const headline = [];
+  if (Number.isFinite(globalMin) && Number.isFinite(globalMax)) headline.push(`Rozsah teplot: ${fmt1(globalMin)} → ${fmt1(globalMax)} °C`);
+  if (okIn) headline.push(`Solár ~${fmt1(sumIn)} Wh`);
+  if (okOut) headline.push(`Zátěž ~${fmt1(sumOut)} Wh`);
+  if (net !== null) headline.push(`Bilance ${net >= 0 ? "+" : ""}${fmt1(net)} Wh`);
+  setText("weekSummaryHeadline", headline.length ? headline.join(" • ") : "—");
+
+  makeSummaryCards("weekSummaryGrid", [
+    { k: "Počet dní", v: String(days.length) },
+    { k: "Min/Max teplota", v: (Number.isFinite(globalMin) ? `${fmt1(globalMin)} / ${fmt1(globalMax)} °C` : "—") },
+    { k: "Energie IN", v: okIn ? `${fmt1(sumIn)} Wh` : "—" },
+    { k: "Energie OUT", v: okOut ? `${fmt1(sumOut)} Wh` : "—" },
+    { k: "Bilance", v: (net !== null) ? `${net >= 0 ? "+" : ""}${fmt1(net)} Wh` : "—" },
+    { k: "Týdny", v: String(Math.ceil(days.length / 7)) }
+  ]);
+}
+
 /* ---------------------------
-   History (zkráceno: beze změny logiky, jen tab switch fix)
+   History: render jen když je potřeba
 ---------------------------- */
 let lastState = null;
+let currentDayIndex = 0;
 
 let lastHistorySignature = "";
 let lastHistoryDayIndex = -1;
 let historyChartsInitialized = false;
 
+// ✅ HISTORIE = memory.days + živý "dnes" (memory.today)
 function getHistoryDays(state) {
   const days = Array.isArray(state?.memory?.days) ? state.memory.days : [];
   const today = state?.memory?.today;
@@ -397,6 +462,7 @@ function getHistoryDays(state) {
 
   if (!today || !today.key || !hasTodaySeries) return days;
 
+  // nepřidávej duplicitně
   const last = days[days.length - 1];
   const lastKey = last?.key || last?.dayKey || last?.date || null;
   if (lastKey && String(lastKey) === String(today.key)) return days;
@@ -406,11 +472,10 @@ function getHistoryDays(state) {
 
 function isHistoryTabActive() {
   const btn = document.querySelector(".tab.active");
-  if (btn) return btn?.getAttribute("data-tab") === "history";
-  const hb = document.querySelector("header button.active");
-  return hb?.id === "btnHistory";
+  return btn?.getAttribute("data-tab") === "history";
 }
 
+// ✅ podpis historie musí reflektovat *vybraný den*, ne jen poslední den.
 function historySignatureFromState(state, dayIndex) {
   const days = getHistoryDays(state);
   if (!days.length) return "0";
@@ -429,15 +494,173 @@ function historySignatureFromState(state, dayIndex) {
   return `${days.length}|${idx}|${key}|${lenT}|${lenIn}|${lenOut}|${lenL}|${lenR}`;
 }
 
-// POZN: renderHistoryCharts / renderWeeklyCharts / setupHistoryControls / render(...) zůstává stejné,
-// jen kvůli délce sem dávám „kompletní“ soubor tak, jak ho máš – u tebe už je to v jedné verzi.
-// Pokud chceš, pošlu ti i variantu, kde je to rozdělené do modulů.
 function renderWeeklyCharts(days) {
-  // původní logika...
+  const weeks = [];
+  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+
+  const labels = weeks.map((w, wi) => {
+    const first = w[0]?.key || `týden ${wi + 1}`;
+    return `T${wi + 1} (${first})`;
+  });
+
+  const minT = [];
+  const maxT = [];
+  for (const w of weeks) {
+    let mn = Infinity, mx = -Infinity;
+    for (const d of w) {
+      const arr = Array.isArray(d?.temperature) ? d.temperature : [];
+      for (const p of arr) {
+        const v = Number(p?.v);
+        if (!Number.isFinite(v)) continue;
+        mn = Math.min(mn, v);
+        mx = Math.max(mx, v);
+      }
+    }
+    minT.push(Number.isFinite(mn) ? mn : null);
+    maxT.push(Number.isFinite(mx) ? mx : null);
+  }
+
+  if (!chartWeekTemp) {
+    chartWeekTemp = makeLineChart(
+      "chartWeekTemp",
+      labels,
+      [
+        { label: "Min (°C)", data: minT, tension: 0.25, pointRadius: 0 },
+        { label: "Max (°C)", data: maxT, tension: 0.25, pointRadius: 0 }
+      ],
+      "°C"
+    );
+  } else {
+    updateLineChart(chartWeekTemp, labels, [
+      { label: "Min (°C)", data: minT, tension: 0.25, pointRadius: 0 },
+      { label: "Max (°C)", data: maxT, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
+
+  const inWh = [];
+  const outWh = [];
+
+  for (const w of weeks) {
+    let sumIn = 0, sumOut = 0, okIn = false, okOut = false;
+
+    for (const d of w) {
+      let di = pickNumber(d, ["energyInWh","solarWh","inWh","dayInWh"]);
+      let do_ = pickNumber(d, ["energyOutWh","loadWh","outWh","dayOutWh"]);
+
+      const ti = pickNumber(d?.totals, ["energyInWh","solarWh","inWh"]);
+      const to = pickNumber(d?.totals, ["energyOutWh","loadWh","outWh"]);
+      if (!Number.isFinite(di) && Number.isFinite(ti)) di = ti;
+      if (!Number.isFinite(do_) && Number.isFinite(to)) do_ = to;
+
+      if (!Number.isFinite(di)) {
+        const sIn = normalizeSeries(d, "energyIn");
+        di = estimateWhFromWSeries(sIn.labels, sIn.data);
+      }
+      if (!Number.isFinite(do_)) {
+        const sOut = normalizeSeries(d, "energyOut");
+        do_ = estimateWhFromWSeries(sOut.labels, sOut.data);
+      }
+
+      if (Number.isFinite(di)) { sumIn += di; okIn = true; }
+      if (Number.isFinite(do_)) { sumOut += do_; okOut = true; }
+    }
+
+    inWh.push(okIn ? sumIn : null);
+    outWh.push(okOut ? sumOut : null);
+  }
+
+  if (!chartWeekEnergy) {
+    chartWeekEnergy = makeLineChart(
+      "chartWeekEnergy",
+      labels,
+      [
+        { label: "Energie IN (Wh)", data: inWh, tension: 0.25, pointRadius: 0 },
+        { label: "Energie OUT (Wh)", data: outWh, tension: 0.25, pointRadius: 0 }
+      ],
+      "Wh"
+    );
+  } else {
+    updateLineChart(chartWeekEnergy, labels, [
+      { label: "Energie IN (Wh)", data: inWh, tension: 0.25, pointRadius: 0 },
+      { label: "Energie OUT (Wh)", data: outWh, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
+
+  renderWeeklySummary(days);
 }
+
 function renderHistoryCharts(state) {
-  // původní logika...
+  const days = getHistoryDays(state);
+  if (!days.length) {
+    setText("dayInfo", "Žádná historie (zatím nemám data)");
+    return;
+  }
+
+  fillDaySelect(days);
+
+  const sel = el("daySelect");
+  let idx = chooseDayIndex(days);
+  if (sel) idx = Number(sel.value || idx);
+  if (!Number.isFinite(idx) || idx < 0 || idx >= days.length) idx = chooseDayIndex(days);
+
+  const day = days[idx] || {};
+  const dayKey = day?.key || day?.dayKey || day?.date || `den ${idx + 1}`;
+
+  const sTemp = normalizeSeries(day, "temperature");
+  const sIn = normalizeSeries(day, "energyIn");
+  const sOut = normalizeSeries(day, "energyOut");
+  const sLight = normalizeSeries(day, "light");
+  const sRisk = normalizeSeries(day, "risk");
+
+  setText("dayInfo", `Vybráno: ${dayKey}${day?._isLive ? " (dnes)" : ""} • vzorků T:${sTemp.data.filter(v=>v!==null).length} S:${sIn.data.filter(v=>v!==null).length} Z:${sOut.data.filter(v=>v!==null).length}`);
+
+  if (!chartTemp) {
+    chartTemp = makeLineChart("chartTemp", sTemp.labels, [
+      { label: "Teplota (°C)", data: sTemp.data, tension: 0.25, pointRadius: 0 }
+    ], "°C");
+  } else {
+    updateLineChart(chartTemp, sTemp.labels, [
+      { label: "Teplota (°C)", data: sTemp.data, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
+
+  const labelsPower = (sIn.labels.length >= sOut.labels.length) ? sIn.labels : sOut.labels;
+  const dsPower = [
+    { label: "Solár (W)", data: alignTo(labelsPower, sIn.labels, sIn.data), tension: 0.25, pointRadius: 0 },
+    { label: "Zátěž (W)", data: alignTo(labelsPower, sOut.labels, sOut.data), tension: 0.25, pointRadius: 0 }
+  ];
+  if (!chartPower) chartPower = makeLineChart("chartPower", labelsPower, dsPower, "W");
+  else updateLineChart(chartPower, labelsPower, dsPower);
+
+  if (!chartLight) {
+    chartLight = makeLineChart("chartLight", sLight.labels, [
+      { label: "Světlo (lx)", data: sLight.data, tension: 0.25, pointRadius: 0 }
+    ], "lx");
+  } else {
+    updateLineChart(chartLight, sLight.labels, [
+      { label: "Světlo (lx)", data: sLight.data, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
+
+  if (!chartBrainRisk) {
+    chartBrainRisk = makeLineChart("chartBrainRisk", sRisk.labels, [
+      { label: "Riziko (0–100)", data: sRisk.data, tension: 0.25, pointRadius: 0 }
+    ], "risk");
+  } else {
+    updateLineChart(chartBrainRisk, sRisk.labels, [
+      { label: "Riziko (0–100)", data: sRisk.data, tension: 0.25, pointRadius: 0 }
+    ]);
+  }
+
+  renderDailySummary(day);
+  renderWeeklyCharts(days);
+
+  currentDayIndex = idx;
+  historyChartsInitialized = true;
+
+  resizeAllCharts();
 }
+
 function maybeUpdateHistory(state, force = false) {
   if (!state) return;
   if (!isHistoryTabActive() && !force) return;
@@ -463,6 +686,9 @@ function maybeUpdateHistory(state, force = false) {
   renderHistoryCharts(state);
 }
 
+/* ---------------------------
+   UI render (DNES + ENERGIE)
+---------------------------- */
 let lastMode = "";
 function render(state) {
   lastState = state;
@@ -549,115 +775,60 @@ function startLoop() {
   loopTimer = setInterval(run, Math.max(400, intervalMs));
 }
 
-function activateTab(name) {
-  // podporujeme dva styly navigace:
-  // 1) nové: .tab[data-tab]
-  // 2) starší: header button s id btnToday/btnHistory/btnEnergy/btnSettings (+ volitelně btnBrain)
-  const allTabButtons = [
-    ...Array.from(document.querySelectorAll(".tab")),
-    ...Array.from(document.querySelectorAll("header button"))
-  ];
-
-  allTabButtons.forEach(b => b.classList.remove("active"));
-
-  // schovej všechny view
-  document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
-
-  // ukaž cílovou view (view-<name>)
-  const target = el(`view-${name}`);
-  if (target) target.classList.remove("hidden");
-
-  // aktivuj tlačítko (priorita: .tab[data-tab], pak #btnX)
-  const tabBtn = document.querySelector(`.tab[data-tab="${name}"]`);
-  if (tabBtn) tabBtn.classList.add("active");
-
-  const legacyBtn = el("btn" + name.charAt(0).toUpperCase() + name.slice(1));
-  if (legacyBtn) legacyBtn.classList.add("active");
-}
-
 function setupTabs() {
-  // vystav i pro inline onclick (kompatibilita se starší UI)
-  window.showView = activateTab;
+  const tabs = Array.from(document.querySelectorAll(".tab"));
+  const panels = Array.from(document.querySelectorAll(".panel"));
 
-  const tabs = document.querySelectorAll(".tab");
-  const legacyHeaderButtons = document.querySelectorAll("header button");
+  const activate = (name) => {
+    // aktivuj tlačítko
+    tabs.forEach(x => x.classList.remove("active"));
+    const btn = tabs.find(b => b.getAttribute("data-tab") === name);
+    if (btn) btn.classList.add("active");
 
-  // ✅ nový systém (.tab)
-  if (tabs.length) {
-    tabs.forEach(t => {
-      t.addEventListener("click", () => {
-        const name = t.getAttribute("data-tab");
-        if (!name) return;
-        activateTab(name);
+    // aktivuj panel (HTML používá #tab-<name> a class .panel.active)
+    panels.forEach(p => p.classList.remove("active"));
+    const panel = el(`tab-${name}`);
+    if (panel) panel.classList.add("active");
 
-        if (name === "history" && lastState) {
-          maybeUpdateHistory(lastState, true);
-          resizeAllCharts();
-        }
-      });
+    // když vlezu do historie, okamžitě přepočítej + přerenderuj grafy
+    if (name === "history" && lastState) {
+      maybeUpdateHistory(lastState, true);
+      resizeAllCharts();
+    }
+  };
+
+  tabs.forEach(t => {
+    t.addEventListener("click", () => {
+      const name = t.getAttribute("data-tab");
+      if (!name) return;
+      activate(name);
     });
-  }
+  });
 
-  // ✅ starší systém (header button)
-  if (legacyHeaderButtons.length) {
-    legacyHeaderButtons.forEach(b => {
-      b.addEventListener("click", () => {
-        const id = b.id || "";
-        const map = {
-          btnToday: "today",
-          btnHistory: "history",
-          btnEnergy: "energy",
-          btnSettings: "settings",
-          btnBrain: "brain"
-        };
-        const name = map[id];
-        if (!name) return;
-        activateTab(name);
-
-        if (name === "history" && lastState) {
-          maybeUpdateHistory(lastState, true);
-          resizeAllCharts();
-        }
-      });
-    });
-  }
-
-  const activeTab =
-    document.querySelector(".tab.active")?.getAttribute("data-tab") ||
-    (() => {
-      const hb = document.querySelector("header button.active");
-      if (!hb) return null;
-      const map = {
-        btnToday: "today",
-        btnHistory: "history",
-        btnEnergy: "energy",
-        btnSettings: "settings",
-        btnBrain: "brain"
-      };
-      return map[hb.id] || null;
-    })();
-
-  activateTab(activeTab || "today");
+  // initial activation
+  const initial = document.querySelector(".tab.active")?.getAttribute("data-tab") || "today";
+  activate(initial);
 }
 
 function setupSettings() {
-  const inp = el("backendInp");
-  const btn = el("backendSave");
-  const out = el("backendOut");
-  const healthBtn = el("btnHealth");
+  // index.html používá: #backendUrl, #btnSave, #btnTest, #healthOut
+  const inp = el("backendUrl");
+  const btnSave = el("btnSave");
+  const btnTest = el("btnTest");
 
   if (inp) inp.value = getBackend();
 
-  if (btn && inp) {
-    btn.addEventListener("click", () => {
+  if (btnSave && inp) {
+    btnSave.addEventListener("click", () => {
       setBackend(inp.value);
-      if (out) out.textContent = "Uloženo ✅";
+      // jemná zpětná vazba přes healthOut, ať nepotřebujeme další element
+      setText("healthOut", "Uloženo ✅");
       startLoop();
     });
   }
 
-  if (healthBtn) {
-    healthBtn.addEventListener("click", async () => {
+  if (btnTest) {
+    btnTest.addEventListener("click", async () => {
       const backend = getBackend();
       if (!backend) return;
       try {
@@ -689,8 +860,13 @@ function setupHistoryControls() {
 
   if (sel) {
     sel.addEventListener("change", () => {
-      if (lastState) maybeUpdateHistory(lastState, true);
-      resizeAllCharts();
+      const idx = Number(sel.value);
+      if (Number.isFinite(idx)) {
+        setDayIndex(idx);
+        currentDayIndex = idx;
+        if (lastState) maybeUpdateHistory(lastState, true);
+        resizeAllCharts();
+      }
     });
   }
 
@@ -700,6 +876,7 @@ function setupHistoryControls() {
     let idx = chooseDayIndex(days);
     idx = Math.max(0, idx - 1);
     setDayIndex(idx);
+    currentDayIndex = idx;
     if (sel) sel.value = String(idx);
     if (lastState) maybeUpdateHistory(lastState, true);
     resizeAllCharts();
@@ -711,6 +888,7 @@ function setupHistoryControls() {
     let idx = chooseDayIndex(days);
     idx = Math.min(days.length - 1, idx + 1);
     setDayIndex(idx);
+    currentDayIndex = idx;
     if (sel) sel.value = String(idx);
     if (lastState) maybeUpdateHistory(lastState, true);
     resizeAllCharts();
