@@ -1,75 +1,77 @@
-# 🌦️ EIRA – Node.js simulátor autonomní meteostanice
+# 🌦️ EIRA – autonomní meteostanice (public test / simulátor)
 
-Tento repozitář obsahuje **hlavní backend simulátor projektu EIRA**.
+EIRA je **experimentální open-source projekt autonomní meteostanice**, která není postavená jen na sběru dat,  
+ale především na **rozhodování, plánování a práci s omezenou energií**.
 
-EIRA v tuto chvíli **neběží na skutečném hardware**, ale v **real-time simulátoru**,
-který slouží jako **plnohodnotná náhrada budoucího fyzického zařízení**.
+Projekt aktuálně běží v **plně funkčním simulátoru**, který se chová stejně, jako se bude chovat budoucí
+**reálné zařízení postavené na ESP32, baterii a solárním panelu**.
 
-Toto není demo ani zrychlená simulace.
-
-Každá minuta, hodina i noc odpovídá **skutečnému času**.  
-Zařízení zde žije stejně pomalu, nejistě a omezeně, jako by žilo venku.
-
----
-
-## 🧠 Smysl simulátoru
-
-Cílem simulátoru je **ověřit chování budoucí autonomní meteostanice** v dlouhém horizontu:
-
-- jak reaguje na **nedostatek energie**
-- jak zvládá **špatné počasí a dlouhou šeď**
-- kdy má smysl měřit a kdy raději šetřit
-- jak se rozhoduje na základě **historie a nejistoty**
-- zda dokáže **přežít bez zásahu člověka**
-
-Simulátor je navržen tak, aby:
-- neodpouštěl chyby
-- nebyl „hodný“
-- a **dlouhodobě odhaloval slabá místa logiky**
+👉 **Live demo (public test):**  
+https://martypetrzel-lab.github.io/meteostanice-publictest/
 
 ---
 
-## 🔌 Vztah k budoucímu hardware
+## 🧠 Smysl projektu
 
-Simulátor **není cílový produkt**.  
-Je to **přípravná fáze pro skutečnou meteostanici postavenou na ESP32**.
+Cílem projektu EIRA je vytvořit zařízení, které:
 
-Veškerá logika je navržena tak, aby:
-- šla **beze změny přenést na hardware**
-- respektovala **fyzikální a energetická omezení**
-- počítala s výpadky, chybami i krizemi
+- ❌ není závislé na cloudu ani internetu
+- ❌ není jen „hloupý senzor s grafem“
+- ✅ rozumí času (den / noc)
+- ✅ sleduje vlastní energetickou situaci
+- ✅ plánuje dopředu
+- ✅ umí se samo přepnout do úsporných režimů
+- ✅ dokáže dlouhodobě **přežít bez zásahu člověka**
 
-Až EIRA vyjde ven do skutečného světa:
-- nebude se učit od nuly
-- už bude znát noc, hlad po energii i dlouhou šedou
-- a bude mít za sebou stovky hodin „života“
+Jednoduše řečeno:  
+**zařízení, které se dokáže o sebe postarat samo.**
 
 ---
 
-## 🧠 Architektura simulátoru
+## 🧪 Proč simulátor?
 
-Backend je rozdělený do oddělených logických vrstev:
+Než vznikne reálný hardware, celý projekt běží v simulátoru, který umožňuje:
 
-- `world` – simulace prostředí (čas, světlo, teplota, scénáře, stres)
-- `energy` – energetický model (příjem, spotřeba, Wh, SoC, confidence)
-- `brain` – rozhodovací logika (plánování, režimy, přežití)
-- `memory` – dlouhodobá paměť a historie
-- `simulator` – orchestrace systému + persistence stavu
+- testovat chování v dlouhém čase (dny / týdny)
+- simulovat špatné podmínky bez rizika poškození HW
+- ladit rozhodovací logiku a energetické chování
 
-Každá vrstva funguje nezávisle a je navržena tak,
-aby mohla být později přenesena do reálného zařízení.
+Simulátor:
+- běží v **reálném čase** (1 s = 1 s)
+- simuluje **světlo, teplotu, den / noc**
+- počítá **příjem a spotřebu energie (W / Wh)**
+- ukládá stav (obnovení stránky ≠ restart dne)
+- chová se stejně jako budoucí:
+  **ESP32 + baterie + solární panel**
+
+---
+
+## ⚙️ Architektura
+
+Projekt je rozdělen do jasně oddělených vrstev:
+
+- `world.js` – simulace prostředí (čas, světlo, teplota, scénáře)
+- `device.js` – virtuální hardware (baterie, spotřeba, solární příjem)
+- `brain.js` – rozhodovací logika (režimy, plánování, šetření)
+- `memory.js` – paměť a historická data
+- `simulator.js` – propojení systému + persistence stavu
+- `ui.js` – vizualizace a přehledy
+- `index.html / style.css` – uživatelské rozhraní
+
+Cílem je **oddělení logiky**, aby bylo možné celý systém později
+přenést do reálného zařízení bez zásadních změn.
 
 ---
 
 ## 🔋 Energie & rozhodování
 
-EIRA pracuje s energií jako s **omezeným a nejistým zdrojem**:
+Zařízení pracuje s těmito principy:
 
-- solární příjem (světlo + historie)
+- solární příjem (podle intenzity světla)
 - aktuální spotřeba zařízení
 - integrace energie (Wh, rolling 24 h)
 - odhad stavu baterie (SoC + confidence)
-- predikce zbytku dne
+- predikce energie do konce dne
 - výpočet výdrže v hodinách
 
 Na základě toho přepíná provozní režimy:
@@ -79,89 +81,49 @@ Na základě toho přepíná provozní režimy:
 - `SAVE`
 - `SURVIVAL`
 
-Cílem není maximální výkon, ale **dlouhodobé přežití a stabilita**.
+Cílem není maximální výkon, ale **dlouhodobá stabilita a přežití**.
 
 ---
 
-## 🧪 Aktuální stav
+## 🧠 Učení a adaptace
 
-- backend simulátoru je **stabilní**
-- systém běží v **reálném čase**
-- probíhá dlouhodobé testování (21denní cykly)
-- UI může být oddělené nebo vypnuté
+EIRA se učí z historie:
 
-Pokud projekt navenek působí „neaktivně“:
-- simulace běží
-- paměť se ukládá
-- rozhodování pokračuje
+- solární profil (hodinové EMA)
+- rozpoznání dne / noci z intenzity světla
+- délku dne bez pevných časových tabulek
+- chování v dlouhodobě špatných podmínkách
 
-EIRA zatím roste **pod pokličkou**.
+Rozhodování vždy pracuje s **nejistotou**, nikdy s absolutními hodnotami.
 
 ---
 
-## 📜 CHANGELOG – Projekt EIRA
+## 🧪 Stav projektu
 
-> EIRA je experimentální simulátor autonomní meteostanice,  
-> která se neučí jen měřit, ale rozumět světu, energii a sama sobě.
+- 🔧 public test
+- 🧠 logika stabilní
+- 🔋 energetický model ověřen
+- ⏱️ dlouhodobý běh (21denní cykly)
+- 🚧 hardware zatím neimplementován
 
-### 🟢 v0.1 – První dech (ZÁLOHA 0.1)
-- základní Node.js simulátor
-- statický svět bez paměti
+Projekt je otevřený záměrně – cílem je ukázat **celý proces vývoje**,  
+včetně slepých uliček, oprav a postupného zrání systému.
 
-### 🟢 v0.2 – Svět dostává tvar (ZÁLOHA 0.2)
-- oddělení světa a zařízení
-- den / noc
-- příprava na paměť
+---
 
-### 🟢 v0.3 – Paměť a historie (ZÁLOHA 0.3)
-- ukládání denních hodnot
-- min / max
-- první historická data
+## 🔮 Směr do budoucna
 
-### 🟢 v0.4 – Stabilizace dat (ZÁLOHA 0.4)
-- sjednocení struktury paměti
-- bezpečná migrace dat
-- stabilní běh
+Plánovaný vývoj:
 
-### 🟡 B 3.0 – Zrození EIRA
-- oddělení `world / energy / brain`
-- vznik autonomního chování
+- ESP32 jako hlavní řídicí jednotka
+- reálné senzory (teplota, vlhkost, světlo, proud)
+- solární napájení + baterie
+- LoRa komunikace bez internetu
+- síť více autonomních uzlů
+- sdílení základních stavů a varování
 
-### 🟡 B 3.1 – Reálný čas
-- simulátor běží 1:1 s reálným časem
-
-### 🟡 B 3.2 – Energie vstupuje do hry
-- baterie, SoC
-- simulace příjmu a spotřeby
-
-### 🟡 B 3.3 – Mozek začíná přemýšlet
-- reakce na energetické podmínky
-- adaptivní chování
-
-### 🟡 B 3.4 – Stres & nestabilita
-- výkyvy světla
-- energetická nestabilita
-- priorita reality před UI
-
-### 🟢 B 3.32.0 – Svět & realistická simulace
-- scénáře počasí
-- stresové vzorce
-- 21denní cyklus
-- svět nereaguje na mozek
-
-### 🟢 B 3.33.0 – Energie & Power-Path
-- realistický energetický model
-- Wh bez driftu
-- SoC + confidence
-- rolling 24 h bilance
-
-### 🟢 B 3.34.0 – Mozek × Energie (STABILNÍ JÁDRO)
-- výdrž v hodinách
-- energetická marže
-- režimy COMFORT / SAVE / SURVIVAL
-- učení solárního profilu
-- den / noc z lux
-- predikce zbytku dne
+Dlouhodobou vizí je **síť soběstačných zařízení**, která fungují
+i bez infrastruktury.
 
 ---
 
@@ -170,15 +132,12 @@ EIRA zatím roste **pod pokličkou**.
 **Martin Petržel**
 
 Osobní vývojový a testovací projekt.  
-Nejde o hotový produkt, ale o **dlouhodobý výzkum autonomního zařízení**.
+Nejde o hotový produkt, ale o **dlouhodobý výzkum a vývoj**.
 
 ---
 
 ## 🔐 Licence & použití
 
-Projekt je open-source, ale **není určen ke komerčnímu využití bez souhlasu autora**.
-
-Tento repozitář je licencován pod licencí  
-**Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0)**.
+Projekt je open-source, ale **není určen pro komerční použití bez souhlasu autora**.
 
 Podrobnosti viz soubor `LICENSE`.
