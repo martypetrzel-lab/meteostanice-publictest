@@ -56,6 +56,10 @@
               <div class="k">Solár</div><div class="v"><span id="uiSolar">—</span> W</div>
               <div class="k">Zátěž</div><div class="v"><span id="uiLoad">—</span> W</div>
               <div class="k">Větrák</div><div class="v"><span id="uiFan">—</span></div>
+
+              <!-- T 3.33.0 quick glance -->
+              <div class="k">Stav energie</div><div class="v"><span id="uiPowerState">—</span></div>
+              <div class="k">Power-path</div><div class="v"><span id="uiPowerPath">—</span></div>
             </div>
           </div>
         </div>
@@ -104,7 +108,7 @@
       <!-- HISTORIE -->
       <section class="panel" id="tab-history">
         <div class="card">
-          <div class="card-h">Historie – grafy + shrnutí (B 3.24)</div>
+          <div class="card-h">Historie – grafy + shrnutí</div>
           <div class="row">
             <div class="muted">Den:</div>
             <select id="daySelect" class="select"></select>
@@ -137,7 +141,7 @@
               <canvas id="chartLight"></canvas>
             </div>
             <div class="chartCard">
-              <div class="chartTitle">Mozek – riziko (pokud backend loguje)</div>
+              <div class="chartTitle">Mozek – riziko</div>
               <canvas id="chartBrainRisk"></canvas>
               <div class="muted small">Když backend neposílá risk historii, graf zůstane prázdný (nic se neláme).</div>
             </div>
@@ -145,7 +149,7 @@
         </div>
 
         <div class="card">
-          <div class="card-h">Týdny – agregace + shrnutí (B 3.25)</div>
+          <div class="card-h">Týdny – agregace</div>
           <div class="muted">Agregace se dělá klientsky z <code>memory.days</code>.</div>
 
           <div class="summaryBox">
@@ -159,20 +163,20 @@
             <canvas id="chartWeekTemp"></canvas>
           </div>
           <div class="chartCard">
-            <div class="chartTitle">Týdenní energie (pokud jsou Wh)</div>
+            <div class="chartTitle">Týdenní energie (Wh)</div>
             <canvas id="chartWeekEnergy"></canvas>
-            <div class="muted small">Preferuje <code>day.energyInWh / day.energyOutWh</code> nebo <code>day.totals</code>. Když nic není, spočítá odhad z W řady.</div>
+            <div class="muted small">Preferuje <code>day.totals.energyInWh / day.totals.energyOutWh</code>. Když nic není, zůstane prázdné.</div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-h">Timeline událostí (B 3.26)</div>
-          <div class="muted">Poslední události (bouřka/mlha/nárazy + změny režimu mozku). Ukládá se lokálně v prohlížeči.</div>
+          <div class="card-h">Timeline událostí</div>
+          <div class="muted">Poslední události se ukládají lokálně v prohlížeči.</div>
           <div id="timeline" class="timeline">—</div>
         </div>
 
         <div class="card">
-          <div class="card-h">Export (B 3.27)</div>
+          <div class="card-h">Export</div>
           <div class="row">
             <button id="btnExportState" class="btn">Export /state JSON</button>
             <button id="btnExportMemory" class="btn ghost">Export memory.days JSON</button>
@@ -192,35 +196,54 @@
             <div class="flowBox">
               <div class="flowLabel">Solár</div>
               <div class="flowValue"><span id="uiSolar2">—</span> W</div>
+              <div class="muted small">EMA: <span id="uiSolarEma">—</span> W</div>
             </div>
             <div class="flowArrow">➡️</div>
             <div class="flowBox">
               <div class="flowLabel">Baterie</div>
               <div class="flowValue"><span id="uiSoc2">—</span> %</div>
+              <div class="muted small">SoC odhad: <span id="uiSocEst">—</span> • jistota: <span id="uiSocConf">—</span></div>
             </div>
             <div class="flowArrow">➡️</div>
             <div class="flowBox">
               <div class="flowLabel">Zátěž</div>
               <div class="flowValue"><span id="uiLoad2">—</span> W</div>
+              <div class="muted small">EMA: <span id="uiLoadEma">—</span> W</div>
             </div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-h">Predikce</div>
+          <div class="card-h">Stavy (T 3.33.0)</div>
           <div class="kv">
-            <div class="k">Net</div><div class="v"><span id="uiNet">—</span> W</div>
-            <div class="k">Výdrž</div><div class="v"><span id="uiBatHours2">—</span> h</div>
-            <div class="k">Dnes solár</div><div class="v"><span id="uiTodaySolarWh">—</span> Wh</div>
+            <div class="k">Power state</div><div class="v"><span id="uiPowerState2">—</span></div>
+            <div class="k">Power-path</div><div class="v"><span id="uiPowerPath2">—</span></div>
+            <div class="k">Kvalita signálu (IN)</div><div class="v"><span id="uiQIn">—</span></div>
+            <div class="k">Kvalita signálu (OUT)</div><div class="v"><span id="uiQOut">—</span></div>
+            <div class="k">Deadband</div><div class="v"><span id="uiDeadband">—</span> W</div>
           </div>
-          <div class="muted">Zobrazuje se jen když backend posílá <code>prediction</code>.</div>
+          <div class="muted small">Kvalita 0–1. Deadband je dynamický „anti-šum“ práh, učí se v IDLE.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Energie – dnes a 24 hodin</div>
+          <div class="kv">
+            <div class="k">Dnes IN</div><div class="v"><span id="uiWhInToday">—</span> Wh</div>
+            <div class="k">Dnes OUT</div><div class="v"><span id="uiWhOutToday">—</span> Wh</div>
+            <div class="k">Dnes NET</div><div class="v"><span id="uiWhNetToday">—</span> Wh</div>
+
+            <div class="k">24h IN</div><div class="v"><span id="uiWhIn24h">—</span> Wh</div>
+            <div class="k">24h OUT</div><div class="v"><span id="uiWhOut24h">—</span> Wh</div>
+            <div class="k">24h NET</div><div class="v"><span id="uiWhNet24h">—</span> Wh</div>
+          </div>
+          <div class="muted small">Reset „dnes“ probíhá v lokální půlnoci (Europe/Prague). 24h je bucketový model po hodinách.</div>
         </div>
       </section>
 
       <!-- NASTAVENÍ -->
       <section class="panel" id="tab-settings">
         <div class="card">
-          <div class="card-h">⚙️ Nastavení UI</div>
+          <div class="card-h">⚙️ Nastavení</div>
 
           <div class="kv">
             <div class="k">Backend URL</div>
@@ -235,11 +258,11 @@
               <span id="healthOut" class="muted">—</span>
             </div>
 
-            <div class="k">Refresh</div>
+            <div class="k">Obnova dat</div>
             <div class="v row">
-              <button class="chipBtn" data-interval="1000">1s</button>
-              <button class="chipBtn" data-interval="2000">2s</button>
-              <button class="chipBtn" data-interval="5000">5s</button>
+              <button class="chipBtn" data-interval="1000">1 s</button>
+              <button class="chipBtn" data-interval="2000">2 s</button>
+              <button class="chipBtn" data-interval="5000">5 s</button>
               <label class="check">
                 <input id="chkRaw" type="checkbox" />
                 <span>Zobrazit RAW JSON</span>
