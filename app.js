@@ -1,9 +1,12 @@
 // app.js – Meteostanice UI (robust schema adapter)
-// B 3.35.4 fixes:
-// - Noční bilance: režim (battery-safe) čtený z více reálných cest
-// - World: scénář doplněné fallback klíče
-// - NightBudget: batteryWh + batteryWhAt5 doplněné fallback klíče
+// UI 3.36.0:
+// - jen 1 vnitřní teplota = teplota boxu (SHT40 / boxTempC)
+// - vnější teplota zvlášť (DS18B20 / airTempC / outdoorTempC)
+// - světlo: doplněn env.light (lux) fallback
+// - scénář + fáze: doplněny env.scenario a env.phase fallbacky
+// - Events: adaptér na nový schema {key, action, level, message} i staré {type,msg}
 
+const UI_VERSION = "3.36.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const RISK_STORE_KEY = "risk_trend_v1";
@@ -231,16 +234,45 @@ function getWorld(s) {
   const w = pick(s, ["world", "state.world", "sim.world", "simulator.world"], {});
   const env = pick(w, ["environment", "env"], w);
 
-  const lux = num(pick(env, ["lightLux", "lux", "bh1750Lux", "worldLux", "environmentLux"], NaN), NaN);
+  // ✅ světlo: přidán env.light (to je v tvých screenech hlavní)
+  const lux = num(pick(env, [
+    "light",            // <-- DŮLEŽITÉ
+    "lightLux",
+    "lux",
+    "bh1750Lux",
+    "worldLux",
+    "environmentLux"
+  ], NaN), NaN);
+
   const solarPot = num(pick(env, ["solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW"], NaN), NaN);
 
-  const outdoorTemp = num(pick(env, ["outdoorTempC", "tempOutdoorC", "outsideTempC", "ds18b20C", "outTempC"], NaN), NaN);
-  const indoorTemp = num(pick(env, ["indoorTempC", "tempIndoorC", "insideTempC", "sht40TempC", "airTempC", "tempC"], NaN), NaN);
-  const indoorHum = num(pick(env, ["indoorHumPct", "humidity", "humPct", "sht40HumPct"], NaN), NaN);
-  const boxTemp = num(pick(env, ["boxTempC", "tempBoxC", "enclosureTempC"], NaN), NaN);
+  const outdoorTemp = num(pick(env, [
+    "outdoorTempC",
+    "airTempC",
+    "temperature",
+    "tempOutdoorC",
+    "outsideTempC",
+    "ds18b20C",
+    "outTempC"
+  ], NaN), NaN);
 
-  // ✅ FIX: doplněné scénář klíče (u tebe byl scénář —)
-  const scenario = pick(w, [
+  // ✅ UI 3.36.0: jediná vnitřní teplota = box
+  const boxTemp = num(pick(env, [
+    "boxTempC",
+    "indoorTempC",
+    "tempBoxC",
+    "enclosureTempC",
+    "sht40TempC",
+    "insideTempC",
+    "tempC"
+  ], NaN), NaN);
+
+  const indoorTemp = boxTemp;
+
+  const indoorHum = num(pick(env, ["indoorHumPct", "indoorHum", "humidity", "humPct", "sht40HumPct"], NaN), NaN);
+
+  // ✅ scénář: z env i z world fallback
+  const scenario = pick(env, ["scenario", "scenarioName", "stressPattern"], pick(w, [
     "scenario",
     "activeScenario",
     "scenarioName",
@@ -250,9 +282,15 @@ function getWorld(s) {
     "weather.scenario",
     "worldScenario",
     "simScenario"
-  ], "—");
+  ], "—"));
 
-  const cyclePhase = pick(w, ["cyclePhase", "phase", "cycle.phase", "cyclePhaseName"], "—");
+  // ✅ fáze cyklu: z env i z world fallback
+  const cyclePhase = pick(env, ["phase", "cyclePhase", "cycle.phase", "cyclePhaseName"], pick(w, [
+    "cyclePhase",
+    "phase",
+    "cycle.phase",
+    "cyclePhaseName"
+  ], "—"));
 
   const wind = num(pick(env, ["windMs", "wind_mps", "wind"], NaN), NaN);
   const raining = !!pick(env, ["raining", "rain", "isRaining"], false);
@@ -309,7 +347,6 @@ function getBattery(s) {
   const socRaw = num(pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)), NaN);
   const socPct = Number.isFinite(socRaw) ? toPercentMaybe01(socRaw) : NaN;
 
-  // ✅ FIX: doplněné batteryWh fallbacky
   const wh = num(pick(b, ["wh", "Wh", "energyWh", "batteryWh"], pick(s, ["batteryWh", "energy.batteryWh", "state.energy.batteryWh"], NaN)), NaN);
 
   return { socPct, wh };
@@ -329,7 +366,6 @@ function getNightBudget(s) {
 
   const availableWh = num(pick(nb, ["availableWh", "availWh", "available_wh"], NaN), NaN);
 
-  // ✅ FIX: batteryWh + batteryWhAt5 fallbacky (u tebe byly —)
   const batteryWh = num(pick(nb, [
     "batteryWh", "batWh", "battery_wh",
     "battery.wh", "battery.Wh", "batteryEnergyWh",
@@ -352,7 +388,6 @@ function getNightBudget(s) {
 }
 
 function getBatterySafeMode(s) {
-  // ✅ FIX: více reálných cest – u tebe to zjevně není tam, kde bylo původně
   const mode = pick(s, [
     "brain.batterySafe.mode",
     "brain.battery_safe.mode",
@@ -419,7 +454,17 @@ function dayToSeries(day) {
 
   for (const p of samples) {
     const ts = p.ts ?? p.t ?? p.time ?? p.x;
-    const tempV = p.indoorTempC ?? p.tempC ?? p.temperatureC ?? p.airTempC;
+
+    // ✅ preferuj boxTempC (vnitřní = box)
+    const tempV =
+      p.boxTempC ??
+      p.indoorTempC ??
+      p.tempC ??
+      p.temperatureC ??
+      p.enclosureTempC ??
+      p.sht40TempC ??
+      p.airTempC;
+
     const luxV = p.lux ?? p.lightLux;
     const inV = p.solarW ?? p.pInW ?? p.inW;
     const outV = p.loadW ?? p.pOutW ?? p.outW;
@@ -469,10 +514,10 @@ function renderTodayCards(s) {
   setText("uiLight", fmt0(w.lux));
   setText("uiSolarPot", fmt1(w.solarPot));
 
-  setText("uiTemp", fmt1(w.indoorTemp));
+  // ✅ UI 3.36.0: nepoužívej uiTemp (odstraněno z UI), pouze box + venek
+  setText("uiBoxTemp", fmt1(w.boxTemp));
   setText("uiHum", fmt0(w.indoorHum));
   setText("uiOutdoorTemp", fmt1(w.outdoorTemp));
-  setText("uiBoxTemp", fmt1(w.boxTemp));
 
   setText("uiScenario", String(w.scenario || "—"));
   setText("uiPhase", String(w.cyclePhase || "—"));
@@ -673,8 +718,8 @@ function renderHistory(s) {
 // render: Events tab
 // ---------------------------
 function renderEventsTab(s) {
-  const list = pick(s, ["events", "state.events", "brain.events", "brain.eventLog"], []);
-  const arr = Array.isArray(list) ? list : [];
+  const arr = getEvents(s);
+
   if (arr.length === 0) {
     setHtml("eventsList", `<div class="muted">— žádné události —</div>`);
     return;
@@ -682,15 +727,24 @@ function renderEventsTab(s) {
 
   const items = [...arr].slice(-200).reverse().map(ev => {
     const ts = num(ev.ts, NaN);
-    const when = Number.isFinite(ts) ? new Date(ts).toLocaleString("cs-CZ") : "—";
-    const type = escapeHtml(ev.type || ev.kind || "event");
-    const msg = escapeHtml(ev.msg || ev.message || "");
+    const when = Number.isFinite(ts) ? new Date(ts).toLocaleString("cs-CZ") : (ev.t ? escapeHtml(ev.t) : "—");
+
+    // nové schema: { key, action, level, message }
+    const key = ev.key || ev.type || ev.kind || "event";
+    const action = ev.action || "";
+    const level = ev.level || "";
+
+    const titleParts = [key, action, level].filter(Boolean).map(x => String(x).toUpperCase());
+    const title = escapeHtml(titleParts.join(" • ") || String(key));
+
+    const msg = escapeHtml(ev.message || ev.msg || ev.text || "");
     const meta = ev.meta ? escapeHtml(JSON.stringify(ev.meta)) : "";
+
     return `
       <div class="tlItem">
         <div class="tlTime">${when}</div>
         <div class="tlBody">
-          <div class="tlTitle">${type}</div>
+          <div class="tlTitle">${title}</div>
           <div class="tlMsg">${msg}</div>
           ${meta ? `<div class="muted small">${meta}</div>` : ""}
         </div>
@@ -729,10 +783,10 @@ function startLoop() {
   const run = async () => {
     try {
       const s = await fetchState();
-      setText("statusText", `Dashboard • ${new Date(getNowTs(s)).toLocaleString("cs-CZ")}`);
+      setText("statusText", `Dashboard • ${new Date(getNowTs(s)).toLocaleString("cs-CZ")} • UI ${UI_VERSION}`);
       render(s);
     } catch (e) {
-      setText("statusText", `Dashboard • chyba: ${e.message}`);
+      setText("statusText", `Dashboard • chyba: ${e.message} • UI ${UI_VERSION}`);
     }
   };
 
@@ -792,7 +846,7 @@ function setupSettings() {
       const v = normalizeBackend(backendInput.value);
       if (!v) return;
       setBackend(v);
-      setText("statusText", `Dashboard • backend uložen`);
+      setText("statusText", `Dashboard • backend uložen • UI ${UI_VERSION}`);
     });
   }
 

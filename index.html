@@ -14,7 +14,7 @@
         <div>
           <div class="title">Meteostanice</div>
           <div class="subtitle">
-            <span id="statusText">Dashboard • načítám…</span>
+            <span id="statusText">Dashboard • UI 3.36.0 • načítám…</span>
             <span class="dot">•</span>
             <a id="stateLink" href="#" target="_blank" rel="noreferrer">/state</a>
           </div>
@@ -57,10 +57,8 @@
             <div class="card-h">Prostředí</div>
             <div class="kv">
               <div class="k">Světlo</div><div class="v"><span id="uiLight">—</span> lx</div>
-              <div class="k">Teplota (vnitřní)</div><div class="v"><span id="uiTemp">—</span> °C</div>
+              <div class="k">Teplota (box)</div><div class="v"><span id="uiBoxTemp">—</span> °C</div>
               <div class="k">Vlhkost</div><div class="v"><span id="uiHum">—</span> %</div>
-
-              <div class="k">Box</div><div class="v"><span id="uiBoxTemp">—</span> °C</div>
               <div class="k">Venku</div><div class="v"><span id="uiOutdoorTemp">—</span> °C</div>
 
               <div class="k">Solární potenciál</div><div class="v"><span id="uiSolarPot">—</span> W</div>
@@ -152,7 +150,7 @@
 
           <div class="grid2">
             <div class="chartCard">
-              <div class="chartTitle">Teplota (°C)</div>
+              <div class="chartTitle">Teplota boxu (°C)</div>
               <canvas id="chartTemp"></canvas>
             </div>
             <div class="chartCard">
@@ -185,7 +183,7 @@
           </div>
 
           <div class="chartCard">
-            <div class="chartTitle">Týdenní min/max teplota (°C)</div>
+            <div class="chartTitle">Týdenní min/max teplota boxu (°C)</div>
             <canvas id="chartWeekTemp"></canvas>
           </div>
           <div class="chartCard">
@@ -313,7 +311,7 @@
     </main>
 
     <footer class="foot">
-      UI prototype • data z /state • ©
+      UI 3.36.0 • data z /state • ©
     </footer>
   </div>
 
