@@ -1,7 +1,8 @@
-// app.js – Meteostanice UI
-// - načítá /state a vykresluje dashboard
-// - T 3.33.0: doplněné zobrazování energie (power_state/power_path/SoC odhad/Wh today/24h/quality)
-// - B 3.35.x: NightBudget panel + UDÁLOSTI tab (event log)
+// app.js – Meteostanice UI (robust schema adapter)
+// Fix:
+// - hodnoty byly "—" protože /state schema se liší -> čteme z více fallback cest
+// - HISTORIE: plní daySelect z memory.days a grafy kreslí z vybraného dne
+// - bezpečné: když něco v backendu není, UI zůstane stabilní
 
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
@@ -25,10 +26,17 @@ function num(x, fallback = NaN) {
   const n = Number(x);
   return Number.isFinite(n) ? n : fallback;
 }
-function deepGet(o, path, fallback = null) {
+function deepGet(o, path, fallback = undefined) {
   try {
     return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), o) ?? fallback;
   } catch { return fallback; }
+}
+function pick(o, paths, fallback = undefined) {
+  for (const p of paths) {
+    const v = deepGet(o, p, undefined);
+    if (v !== undefined && v !== null) return v;
+  }
+  return fallback;
 }
 function escapeHtml(s) {
   return String(s || "")
@@ -38,12 +46,22 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
-function toHHMM(ts) {
-  if (!ts) return "—";
-  const d = new Date(ts);
+function toLocalTimeLabel(tsOrStr) {
+  // podporuje: epoch ms, ISO string, "HH:MM"
+  if (tsOrStr === null || tsOrStr === undefined) return "—";
+  if (typeof tsOrStr === "string" && /^\d{2}:\d{2}/.test(tsOrStr)) return tsOrStr.slice(0, 5);
+
+  const t = (typeof tsOrStr === "string") ? Date.parse(tsOrStr) : Number(tsOrStr);
+  if (!Number.isFinite(t)) return String(tsOrStr).slice(0, 8);
+
+  const d = new Date(t);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
+}
+function toPercentMaybe01(x) {
+  if (!Number.isFinite(x)) return NaN;
+  return x <= 1.2 ? x * 100 : x;
 }
 
 // ---------------------------
@@ -116,7 +134,6 @@ function setCanvasSize(canvas) {
   canvas.width = w;
   canvas.height = h;
 }
-
 function createChart(canvasId, labels, datasets, yTitle = "") {
   const c = el(canvasId);
   if (!c || !window.Chart) return null;
@@ -133,17 +150,16 @@ function createChart(canvasId, labels, datasets, yTitle = "") {
       interaction: { mode: "index", intersect: false },
       plugins: { legend: { labels: { color: "#e9eefc" } } },
       scales: {
-        x: { ticks: { color: "#9fb0d8", maxRotation: 0 }, grid: { color: "rgba(255,255,255,06)" } },
+        x: { ticks: { color: "#9fb0d8", maxRotation: 0 }, grid: { color: "rgba(255,255,255,0.06)" } },
         y: {
           ticks: { color: "#9fb0d8" },
-          grid: { color: "rgba(255,255,255,06)" },
+          grid: { color: "rgba(255,255,255,0.06)" },
           title: { display: !!yTitle, text: yTitle, color: "#9fb0d8" }
         }
       }
     }
   });
 }
-
 function updateLineChart(chart, labels, datasets) {
   if (!chart) return;
   chart.data.labels = labels;
@@ -192,7 +208,6 @@ function ensureCharts() {
     ], "Wh");
   }
 }
-
 function resizeAllCharts() {
   const ids = ["chartTemp", "chartPower", "chartLight", "chartBrainRisk", "chartWeekTemp", "chartWeekEnergy"];
   ids.forEach(id => {
@@ -203,7 +218,6 @@ function resizeAllCharts() {
     if (ch) ch.resize();
   });
 }
-
 window.addEventListener("resize", () => {
   clearTimeout(window.__rzT);
   window.__rzT = setTimeout(resizeAllCharts, 120);
@@ -250,8 +264,8 @@ function drawRiskCanvas(points) {
   ctx.beginPath();
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
-    const x = ((p.ts - minTs) / span) * (w - 2) + 1;
-    const y = h - (((clamp(p.v, minV, maxV) - minV) / (maxV - minV)) * (h - 2) + 1);
+    const x = ((R  => (R.ts - minTs) / span)(R) * (w - 2) + 1);
+    const y = h - (((clamp(R.v, minV, maxV) - minV) / (maxV - minV)) * (h - 2) + 1);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
@@ -281,122 +295,345 @@ function fmtQ(q) {
 }
 
 // ---------------------------
+// SCHEMA ADAPTERS (robust getters)
+// ---------------------------
+function getNowTs(s) {
+  return num(pick(s, ["time.now", "now", "ts", "timestamp"], Date.now()), Date.now());
+}
+
+function getWorld(s) {
+  const w = pick(s, ["world", "state.world", "sim.world", "simulator.world"], {});
+  const env = pick(w, ["environment", "env"], w);
+
+  const lux = num(pick(env, ["lightLux", "lux", "bh1750Lux", "worldLux", "environmentLux"], NaN), NaN);
+  const solarPot = num(pick(env, ["solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW"], NaN), NaN);
+
+  const outdoorTemp = num(pick(env, ["outdoorTempC", "tempOutdoorC", "outsideTempC", "ds18b20C", "outTempC"], NaN), NaN);
+  const indoorTemp = num(pick(env, ["indoorTempC", "tempIndoorC", "insideTempC", "sht40TempC", "airTempC", "tempC"], NaN), NaN);
+  const indoorHum = num(pick(env, ["indoorHumPct", "humidity", "humPct", "sht40HumPct"], NaN), NaN);
+  const boxTemp = num(pick(env, ["boxTempC", "tempBoxC", "enclosureTempC"], NaN), NaN);
+
+  const scenario = pick(w, ["scenario", "activeScenario", "scenarioName"], "—");
+  const cyclePhase = pick(w, ["cyclePhase", "phase", "cycle.phase"], "—");
+
+  const wind = num(pick(env, ["windMs", "wind_mps", "wind"], NaN), NaN);
+  const raining = !!pick(env, ["raining", "rain", "isRaining"], false);
+  const thunder = !!pick(env, ["thunder", "storm", "isThunder"], false);
+  const snowing = !!pick(env, ["snowing", "snow", "isSnowing"], false);
+
+  return { lux, solarPot, outdoorTemp, indoorTemp, indoorHum, boxTemp, scenario, cyclePhase, wind, raining, thunder, snowing };
+}
+
+function getEnergy(s) {
+  const e = pick(s, ["energy", "state.energy", "power", "state.power"], {});
+  const inaIn = pick(e, ["ina_in", "inaIn", "in"], {});
+  const inaOut = pick(e, ["ina_out", "inaOut", "out"], {});
+  const sum = pick(e, ["summary", "totals", "stats"], {});
+
+  const pIn = num(pick(e, ["p_in_raw", "pInW"], pick(inaIn, ["p_raw", "p", "powerW"], pick(sum, ["p_in_raw", "p_in", "pIn"], NaN))), NaN);
+  const pOut = num(pick(e, ["p_out_raw", "pOutW"], pick(inaOut, ["p_raw", "p", "powerW"], pick(sum, ["p_out_raw", "p_out", "pOut"], NaN))), NaN);
+
+  const pInEma = num(pick(inaIn, ["p_ema", "ema", "powerEmaW"], pick(sum, ["p_in_ema", "pInEma"], NaN)), NaN);
+  const pOutEma = num(pick(inaOut, ["p_ema", "ema", "powerEmaW"], pick(sum, ["p_out_ema", "pOutEma"], NaN)), NaN);
+
+  const powerState = pick(e, ["states.power_state", "power_state", "powerState"], pick(sum, ["power_state", "powerState"], "—"));
+  const powerPath = pick(e, ["states.power_path_state", "power_path_state", "powerPathState"], pick(sum, ["power_path_state", "powerPathState"], "—"));
+
+  const qIn = num(pick(inaIn, ["signal_quality", "quality", "q"], pick(sum, ["q_in", "qIn"], NaN)), NaN);
+  const qOut = num(pick(inaOut, ["signal_quality", "quality", "q"], pick(sum, ["q_out", "qOut"], NaN)), NaN);
+
+  const deadbandW = num(pick(e, ["deadbandW", "deadband_w", "deadband"], NaN), NaN);
+
+  const whInToday = num(pick(e, ["totals.wh_in_today", "wh_in_today", "whInToday"], pick(sum, ["wh_in_today", "whInToday"], NaN)), NaN);
+  const whOutToday = num(pick(e, ["totals.wh_out_today", "wh_out_today", "whOutToday"], pick(sum, ["wh_out_today", "whOutToday"], NaN)), NaN);
+  const whNetToday = num(pick(e, ["totals.wh_net_today", "wh_net_today", "whNetToday"], pick(sum, ["wh_net_today", "whNetToday"], NaN)), NaN);
+
+  const whIn24 = num(pick(e, ["rolling24h.wh_in_24h", "wh_in_24h", "whIn24h"], pick(sum, ["wh_in_24h", "whIn24h"], NaN)), NaN);
+  const whOut24 = num(pick(e, ["rolling24h.wh_out_24h", "wh_out_24h", "whOut24h"], pick(sum, ["wh_out_24h", "whOut24h"], NaN)), NaN);
+  const whNet24 = num(pick(e, ["rolling24h.wh_net_24h", "wh_net_24h", "whNet24h"], pick(sum, ["wh_net_24h", "whNet24h"], NaN)), NaN);
+
+  const socEst = num(pick(e, ["soc.soc_est", "soc_est"], pick(sum, ["soc_est", "socEst"], NaN)), NaN);
+  const socConf = num(pick(e, ["soc.soc_confidence", "soc_confidence"], pick(sum, ["soc_confidence", "socConfidence"], NaN)), NaN);
+
+  return {
+    pIn, pOut, pInEma, pOutEma,
+    powerState, powerPath,
+    qIn, qOut,
+    deadbandW,
+    whInToday, whOutToday, whNetToday,
+    whIn24, whOut24, whNet24,
+    socEst, socConf
+  };
+}
+
+function getBattery(s) {
+  const b = pick(s, ["device.battery", "battery", "state.battery"], {});
+  const socRaw = num(pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)), NaN);
+  const socPct = Number.isFinite(socRaw) ? toPercentMaybe01(socRaw) : NaN;
+
+  const wh = num(pick(b, ["wh", "energyWh", "batteryWh"], NaN), NaN);
+  return { socPct, wh };
+}
+
+function getNightBudget(s) {
+  const nb = pick(s, ["brain.nightBudget", "nightBudget", "brain.batterySafe.nightBudget"], {});
+  // coverage/deficit ti už jdou -> jen doplníme fallback klíče
+  const coveragePct = num(pick(nb, ["coveragePct", "coverage", "coverage_percent"], NaN), NaN);
+  const deficitWh = num(pick(nb, ["deficitWh", "deficit", "deficit_wh"], NaN), NaN);
+
+  const remainingNightHours = num(pick(nb, ["remainingNightHours", "remainingHours", "hoursToMorning"], NaN), NaN);
+  const pNightSelectedW = num(pick(nb, ["pNightSelectedW", "pNightW", "pNightSelected"], NaN), NaN);
+  const nightNeedWh = num(pick(nb, ["nightNeedWh", "needWh", "night_need_wh"], NaN), NaN);
+  const reserveWh = num(pick(nb, ["reserveWh", "reserve", "reserve_wh"], NaN), NaN);
+  const totalNightBudgetWh = num(pick(nb, ["totalNightBudgetWh", "totalWh", "budgetWh"], NaN), NaN);
+
+  const availableWh = num(pick(nb, ["availableWh", "availWh", "available_wh"], NaN), NaN);
+  const batteryWh = num(pick(nb, ["batteryWh", "batWh", "battery_wh"], NaN), NaN);
+  const batteryWhAt5 = num(pick(nb, ["batteryWhAt5", "floorWh", "whAt5"], NaN), NaN);
+
+  return { coveragePct, deficitWh, remainingNightHours, pNightSelectedW, nightNeedWh, reserveWh, totalNightBudgetWh, availableWh, batteryWh, batteryWhAt5 };
+}
+
+function getBatterySafeMode(s) {
+  // u tebe se režim v noční bilanci zobrazuje jako "—", ale event log má ENTER NORMAL -> někde to je
+  const mode = pick(s, [
+    "brain.batterySafe.mode",
+    "brain.batterySafeMode",
+    "brain.battery_safe_mode",
+    "brain.modeBatterySafe",
+    "brain.battery.mode",
+    "batterySafe.mode",
+    "batterySafeMode"
+  ], "—");
+  return mode || "—";
+}
+
+function getEvents(s) {
+  const list =
+    (Array.isArray(pick(s, ["events"], null)) ? s.events : null) ||
+    (Array.isArray(pick(s, ["state.events"], null)) ? s.state.events : null) ||
+    (Array.isArray(pick(s, ["brain.events"], null)) ? s.brain.events : null) ||
+    (Array.isArray(pick(s, ["brain.eventLog"], null)) ? s.brain.eventLog : null) ||
+    [];
+  return Array.isArray(list) ? list : [];
+}
+
+function getMemoryDays(s) {
+  const days = pick(s, ["memory.days", "history.days", "days"], []);
+  return Array.isArray(days) ? days : [];
+}
+function getTodayKey(s) {
+  return pick(s, ["memory.todayKey", "memory.today.key", "todayKey", "dayKey"], null);
+}
+
+// ---------------------------
+// HISTORIE data extraction
+// ---------------------------
+function normalizeSeries(arr) {
+  // podporuje: [{t,v}] nebo [{ts,v}] nebo [{time,value}]
+  if (!Array.isArray(arr)) return [];
+  return arr.map(p => {
+    const t = (p.t !== undefined) ? p.t : (p.ts !== undefined ? p.ts : (p.time !== undefined ? p.time : p.x));
+    const v = (p.v !== undefined) ? p.v : (p.value !== undefined ? p.value : p.y);
+    return { t, v };
+  }).filter(p => p.t !== undefined);
+}
+function dayToSeries(day) {
+  // Standard: day.temperature / day.light / day.energyIn / day.energyOut / day.brainRisk
+  // Fallback: day.samples[] s {ts, indoorTempC/outdoorTempC/lux/solarW/loadW/risk}
+  const t1 = normalizeSeries(day.temperature || day.temp || []);
+  const l1 = normalizeSeries(day.light || day.lux || []);
+  const in1 = normalizeSeries(day.energyIn || day.solar || day.pIn || []);
+  const out1 = normalizeSeries(day.energyOut || day.load || day.pOut || []);
+  const r1 = normalizeSeries(day.brainRisk || day.risk || []);
+
+  if (t1.length || l1.length || in1.length || out1.length || r1.length) {
+    return { temp: t1, light: l1, ein: in1, eout: out1, risk: r1 };
+  }
+
+  const samples = Array.isArray(day.samples) ? day.samples : (Array.isArray(day.points) ? day.points : []);
+  if (!samples.length) return { temp: [], light: [], ein: [], eout: [], risk: [] };
+
+  const temp = [];
+  const light = [];
+  const ein = [];
+  const eout = [];
+  const risk = [];
+
+  for (const p of samples) {
+    const ts = p.ts ?? p.t ?? p.time ?? p.x;
+    const tempV = p.indoorTempC ?? p.tempC ?? p.temperatureC ?? p.airTempC;
+    const luxV = p.lux ?? p.lightLux;
+    const inV = p.solarW ?? p.pInW ?? p.inW;
+    const outV = p.loadW ?? p.pOutW ?? p.outW;
+    const riskV = p.risk ?? p.brainRisk;
+
+    if (tempV !== undefined) temp.push({ t: ts, v: tempV });
+    if (luxV !== undefined) light.push({ t: ts, v: luxV });
+    if (inV !== undefined) ein.push({ t: ts, v: inV });
+    if (outV !== undefined) eout.push({ t: ts, v: outV });
+    if (riskV !== undefined) risk.push({ t: ts, v: riskV });
+  }
+
+  return { temp, light, ein, eout, risk };
+}
+
+let selectedDayKey = null;
+
+function populateDaySelect(days) {
+  const sel = el("daySelect");
+  if (!sel) return;
+
+  const cur = selectedDayKey || "";
+  sel.innerHTML = "";
+
+  for (const d of days) {
+    const key = d.key || d.day || d.date || "—";
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = key;
+    sel.appendChild(opt);
+  }
+
+  if (cur && [...sel.options].some(o => o.value === cur)) {
+    sel.value = cur;
+  } else if (days.length) {
+    sel.value = days[days.length - 1].key || days[days.length - 1].day || days[days.length - 1].date;
+    selectedDayKey = sel.value;
+  }
+}
+
+// ---------------------------
 // render: TODAY cards
 // ---------------------------
 function renderTodayCards(s) {
-  const env = deepGet(s, "world.environment", {}) || {};
+  const w = getWorld(s);
 
-  setText("uiLight", fmt0(num(env.lightLux, NaN)));
-  setText("uiSolarPot", fmt1(num(env.solarPotentialW, NaN)));
+  setText("uiLight", fmt0(w.lux));
+  setText("uiSolarPot", fmt1(w.solarPot));
 
-  // dva senzory: vnitřní (SHT40) + venkovní (DS18B20)
-  setText("uiTemp", fmt1(num(env.indoorTempC, num(env.airTempC, NaN))));
-  setText("uiHum", fmt0(num(env.indoorHumPct, num(env.humidity, NaN))));
-  setText("uiOutdoorTemp", fmt1(num(env.outdoorTempC, NaN)));
-  setText("uiBoxTemp", fmt1(num(env.boxTempC, NaN)));
+  setText("uiTemp", fmt1(w.indoorTemp));
+  setText("uiHum", fmt0(w.indoorHum));
+  setText("uiOutdoorTemp", fmt1(w.outdoorTemp));
+  setText("uiBoxTemp", fmt1(w.boxTemp));
 
-  setText("uiScenario", String(deepGet(s, "world.scenario", "—")));
-  setText("uiPhase", String(deepGet(s, "world.cyclePhase", "—")));
+  setText("uiScenario", String(w.scenario || "—"));
+  setText("uiPhase", String(w.cyclePhase || "—"));
 
-  // simple chips
   const chips = [];
-  if (env.raining) chips.push("Déšť");
-  if (env.thunder) chips.push("Bouřka");
-  if (env.snowing) chips.push("Sníh");
-  if (Number.isFinite(num(env.windMs, NaN))) chips.push(`Vítr ${fmt1(num(env.windMs))} m/s`);
+  if (w.raining) chips.push("Déšť");
+  if (w.thunder) chips.push("Bouřka");
+  if (w.snowing) chips.push("Sníh");
+  if (Number.isFinite(w.wind)) chips.push(`Vítr ${fmt1(w.wind)} m/s`);
   setHtml("uiWeatherChips", chips.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(""));
 
-  // energy quick
-  const soc = num(deepGet(s, "device.battery.soc", deepGet(s, "device.battery", NaN)), NaN);
-  setText("uiSoc", Number.isFinite(soc) ? fmt0(soc <= 1.2 ? soc * 100 : soc) : "—");
+  const bat = getBattery(s);
+  setText("uiSoc", Number.isFinite(bat.socPct) ? fmt0(bat.socPct) : "—");
 
-  const pIn = num(deepGet(s, "energy.summary.p_in_raw", deepGet(s, "energy.ina_in.p_raw", NaN)), NaN);
-  const pOut = num(deepGet(s, "energy.summary.p_out_raw", deepGet(s, "energy.ina_out.p_raw", NaN)), NaN);
-  setText("uiSolar", Number.isFinite(pIn) ? fmt3(pIn) : "—");
-  setText("uiLoad", Number.isFinite(pOut) ? fmt3(pOut) : "—");
+  const e = getEnergy(s);
+  setText("uiSolar", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
+  setText("uiLoad", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
 
-  // fan
-  setText("uiFan", deepGet(s, "device.fan.on", null) ? "ON" : "—");
+  setText("uiFan", pick(s, ["device.fan.on", "fan.on"], null) ? "ON" : "—");
 
-  // battery-safe
-  const batSafe = deepGet(s, "brain.batterySafe.mode", deepGet(s, "brain.batterySafeMode", "—"));
-  setText("uiBatSafe", batSafe || "—");
+  const batSafe = getBatterySafeMode(s);
+  setText("uiBatSafe", batSafe);
 
-  // night budget quick
-  const nb = deepGet(s, "brain.nightBudget", {}) || {};
-  const cov = num(nb.coveragePct, NaN);
-  const def = num(nb.deficitWh, NaN);
-  setText("uiCovQuick", Number.isFinite(cov) ? fmt0(cov) : "—");
-  setText("uiDefQuick", Number.isFinite(def) ? fmt1(def) : "—");
+  const nb = getNightBudget(s);
+  setText("uiCovQuick", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
+  setText("uiDefQuick", Number.isFinite(nb.deficitWh) ? fmt1(nb.deficitWh) : "—");
 
-  // power state/path quick
-  const ps = deepGet(s, "energy.summary.power_state", deepGet(s, "energy.states.power_state", "—"));
-  const pp = deepGet(s, "energy.summary.power_path_state", deepGet(s, "energy.states.power_path_state", "—"));
-  setText("uiPowerState", powerStateCz(ps));
-  setText("uiPowerPath", powerPathCz(pp));
+  setText("uiPowerState", powerStateCz(e.powerState));
+  setText("uiPowerPath", powerPathCz(e.powerPath));
 }
 
 // ---------------------------
 // render: Night budget panel
 // ---------------------------
 function renderNightBudget(s) {
-  const nb = deepGet(s, "brain.nightBudget", {}) || {};
-  const mode = deepGet(s, "brain.batterySafe.mode", deepGet(s, "brain.batterySafeMode", "—"));
+  const nb = getNightBudget(s);
+  setText("uiNightMode", getBatterySafeMode(s));
+  setText("uiNightCoverage", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
+  setText("uiNightDeficit", Number.isFinite(nb.deficitWh) ? fmt1(nb.deficitWh) : "—");
 
-  setText("uiNightMode", mode || "—");
+  setText("uiNightHours", Number.isFinite(nb.remainingNightHours) ? fmt1(nb.remainingNightHours) : "—");
+  setText("uiNightP", Number.isFinite(nb.pNightSelectedW) ? fmt3(nb.pNightSelectedW) : "—");
 
-  const cov = num(nb.coveragePct, NaN);
-  setText("uiNightCoverage", Number.isFinite(cov) ? fmt0(cov) : "—");
+  setText("uiNightNeed", Number.isFinite(nb.nightNeedWh) ? fmt1(nb.nightNeedWh) : "—");
+  setText("uiNightReserve", Number.isFinite(nb.reserveWh) ? fmt1(nb.reserveWh) : "—");
+  setText("uiNightTotal", Number.isFinite(nb.totalNightBudgetWh) ? fmt1(nb.totalNightBudgetWh) : "—");
 
-  const deficit = num(nb.deficitWh, NaN);
-  setText("uiNightDeficit", Number.isFinite(deficit) ? fmt1(deficit) : "—");
-
-  setText("uiNightHours", Number.isFinite(num(nb.remainingNightHours, NaN)) ? fmt1(num(nb.remainingNightHours)) : "—");
-  setText("uiNightP", Number.isFinite(num(nb.pNightSelectedW, NaN)) ? fmt3(num(nb.pNightSelectedW)) : "—");
-
-  setText("uiNightNeed", Number.isFinite(num(nb.nightNeedWh, NaN)) ? fmt1(num(nb.nightNeedWh)) : "—");
-  setText("uiNightReserve", Number.isFinite(num(nb.reserveWh, NaN)) ? fmt1(num(nb.reserveWh)) : "—");
-  setText("uiNightTotal", Number.isFinite(num(nb.totalNightBudgetWh, NaN)) ? fmt1(num(nb.totalNightBudgetWh)) : "—");
-
-  setText("uiNightAvail", Number.isFinite(num(nb.availableWh, NaN)) ? fmt1(num(nb.availableWh)) : "—");
-  setText("uiNightBat", Number.isFinite(num(nb.batteryWh, NaN)) ? fmt1(num(nb.batteryWh)) : "—");
-  setText("uiNightFloor", Number.isFinite(num(nb.batteryWhAt5, NaN)) ? fmt1(num(nb.batteryWhAt5)) : "—");
+  setText("uiNightAvail", Number.isFinite(nb.availableWh) ? fmt1(nb.availableWh) : "—");
+  setText("uiNightBat", Number.isFinite(nb.batteryWh) ? fmt1(nb.batteryWh) : "—");
+  setText("uiNightFloor", Number.isFinite(nb.batteryWhAt5) ? fmt1(nb.batteryWhAt5) : "—");
 }
 
 // ---------------------------
 // render: Brain
 // ---------------------------
 function renderBrain(s) {
-  const msg = deepGet(s, "brain.message.text", deepGet(s, "brain.message", "—"));
-  const details = deepGet(s, "brain.message.details", []);
-  const mode = deepGet(s, "brain.mode", deepGet(s, "brain.policy.mode", "—"));
+  const msg = pick(s, ["brain.message.text", "brain.message", "brain.msg"], "—");
+  const details = pick(s, ["brain.message.details", "brain.details"], []);
+  const mode = pick(s, ["brain.mode", "brain.policy.mode"], "—");
 
   setText("uiMsg", msg || "—");
   setText("uiDetails", Array.isArray(details) ? details.join(" • ") : String(details || "—"));
   setText("uiModeBadge", mode || "—");
 
-  const risk = num(deepGet(s, "brain.risk", NaN), NaN);
+  const risk = num(pick(s, ["brain.risk", "brain.riskScore", "brain.riskPct"], NaN), NaN);
   setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
   const bar = el("uiRiskBar");
   if (bar && Number.isFinite(risk)) bar.style.width = `${clamp(risk, 0, 100)}%`;
 
-  // battery hours / sun line (pokud existují)
-  setText("uiBatHours", fmt1(num(deepGet(s, "brain.battery.hours", deepGet(s, "brain.batteryHours", NaN)), NaN)));
-  setText("uiSunLine", String(deepGet(s, "brain.time.hoursToSunset", "—")));
-  setText("uiSunHint", String(deepGet(s, "brain.solar.untilSunsetWh", "—")));
+  setText("uiBatHours", fmt1(num(pick(s, ["brain.battery.hours", "brain.batteryHours"], NaN), NaN)));
+  setText("uiSunLine", String(pick(s, ["brain.time.hoursToSunset", "brain.hoursToSunsetEst", "hoursToSunsetEst"], "—")));
+  setText("uiSunHint", String(pick(s, ["brain.solar.untilSunsetWh", "brain.solarRemainingWhToSunset", "solarRemainingWhToSunset"], "—")));
 
-  // risk trend local
-  const now = num(deepGet(s, "time.now", Date.now()), Date.now());
+  const now = getNowTs(s);
   if (Number.isFinite(risk)) {
     const pts = pushRiskPoint(now, clamp(risk, 0, 100));
-    drawRiskCanvas(pts);
+    // (riskCanvas) když není, nic se neděje
+    try {
+      const c = el("riskCanvas");
+      if (c) {
+        const ctx = c.getContext("2d");
+        if (ctx) {
+          // jednoduché vykreslení bez extra závislostí
+          ctx.clearRect(0, 0, c.width, c.height);
+          ctx.globalAlpha = 0.22;
+          ctx.beginPath();
+          for (let i = 1; i < 5; i++) {
+            const y = (c.height / 5) * i;
+            ctx.moveTo(0, y);
+            ctx.lineTo(c.width, y);
+          }
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+
+          if (pts.length >= 2) {
+            const minTs = pts[0].ts;
+            const maxTs = pts[pts.length - 1].ts;
+            const span = Math.max(1, maxTs - minTs);
+
+            ctx.beginPath();
+            for (let i = 0; i < pts.length; i++) {
+              const p = pts[i];
+              const x = ((p.ts - minTs) / span) * (c.width - 2) + 1;
+              const y = c.height - (((clamp(p.v, 0, 100)) / 100) * (c.height - 2) + 1);
+              if (i === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+          }
+        }
+      }
+    } catch {}
   }
 
-  // chips
   const chips = [];
-  const bs = deepGet(s, "brain.batterySafe.mode", null);
-  if (bs) chips.push(`Battery-safe: ${bs}`);
-  const cov = num(deepGet(s, "brain.nightBudget.coveragePct", NaN), NaN);
+  const bs = getBatterySafeMode(s);
+  if (bs && bs !== "—") chips.push(`Battery-safe: ${bs}`);
+  const cov = num(pick(s, ["brain.nightBudget.coveragePct", "nightBudget.coveragePct"], NaN), NaN);
   if (Number.isFinite(cov)) chips.push(`Noční bilance: ${fmt0(cov)}%`);
   setHtml("uiBrainChips", chips.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(""));
 }
@@ -405,145 +642,134 @@ function renderBrain(s) {
 // render: Energy tab
 // ---------------------------
 function renderEnergyTab(s) {
-  const pIn = num(deepGet(s, "energy.ina_in.p_raw", deepGet(s, "energy.summary.p_in_raw", NaN)), NaN);
-  const pOut = num(deepGet(s, "energy.ina_out.p_raw", deepGet(s, "energy.summary.p_out_raw", NaN)), NaN);
-  const pInEma = num(deepGet(s, "energy.ina_in.p_ema", deepGet(s, "energy.summary.p_in_ema", NaN)), NaN);
-  const pOutEma = num(deepGet(s, "energy.ina_out.p_ema", deepGet(s, "energy.summary.p_out_ema", NaN)), NaN);
+  const e = getEnergy(s);
+  const bat = getBattery(s);
 
-  setText("uiSolar2", Number.isFinite(pIn) ? fmt3(pIn) : "—");
-  setText("uiLoad2", Number.isFinite(pOut) ? fmt3(pOut) : "—");
-  setText("uiSolarEma", Number.isFinite(pInEma) ? fmt3(pInEma) : "—");
-  setText("uiLoadEma", Number.isFinite(pOutEma) ? fmt3(pOutEma) : "—");
+  setText("uiSolar2", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
+  setText("uiLoad2", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
+  setText("uiSolarEma", Number.isFinite(e.pInEma) ? fmt3(e.pInEma) : "—");
+  setText("uiLoadEma", Number.isFinite(e.pOutEma) ? fmt3(e.pOutEma) : "—");
 
-  // SoC
-  const soc = num(deepGet(s, "device.battery.soc", deepGet(s, "device.battery", NaN)), NaN);
-  setText("uiSoc2", Number.isFinite(soc) ? fmt0(soc <= 1.2 ? soc * 100 : soc) : "—");
+  setText("uiSoc2", Number.isFinite(bat.socPct) ? fmt0(bat.socPct) : "—");
 
-  const socEst = num(deepGet(s, "energy.summary.soc_est", deepGet(s, "energy.soc.soc_est", NaN)), NaN);
-  const socConf = num(deepGet(s, "energy.summary.soc_confidence", deepGet(s, "energy.soc.soc_confidence", NaN)), NaN);
-  setText("uiSocEst", Number.isFinite(socEst) ? `${fmt0(socEst * 100)} %` : "—");
-  setText("uiSocConf", Number.isFinite(socConf) ? `${fmt0(socConf * 100)} %` : "—");
+  setText("uiSocEst", Number.isFinite(e.socEst) ? `${fmt0(e.socEst * 100)} %` : "—");
+  setText("uiSocConf", Number.isFinite(e.socConf) ? `${fmt0(e.socConf * 100)} %` : "—");
 
-  // state/path
-  const ps = deepGet(s, "energy.summary.power_state", deepGet(s, "energy.states.power_state", "—"));
-  const pp = deepGet(s, "energy.summary.power_path_state", deepGet(s, "energy.states.power_path_state", "—"));
-  setText("uiPowerState2", powerStateCz(ps));
-  setText("uiPowerPath2", powerPathCz(pp));
+  setText("uiPowerState2", powerStateCz(e.powerState));
+  setText("uiPowerPath2", powerPathCz(e.powerPath));
 
-  // quality
-  const qIn = num(deepGet(s, "energy.ina_in.signal_quality", deepGet(s, "energy.summary.q_in", NaN)), NaN);
-  const qOut = num(deepGet(s, "energy.ina_out.signal_quality", deepGet(s, "energy.summary.q_out", NaN)), NaN);
-  setText("uiQIn", fmtQ(qIn));
-  setText("uiQOut", fmtQ(qOut));
+  setText("uiQIn", fmtQ(e.qIn));
+  setText("uiQOut", fmtQ(e.qOut));
 
-  // deadband
-  const deadband = num(deepGet(s, "energy.deadbandW", NaN), NaN);
-  setText("uiDeadband", Number.isFinite(deadband) ? fmt3(deadband) : "—");
+  setText("uiDeadband", Number.isFinite(e.deadbandW) ? fmt3(e.deadbandW) : "—");
 
-  // Wh today + 24h
-  const whInToday = num(deepGet(s, "energy.totals.wh_in_today", deepGet(s, "energy.summary.wh_in_today", NaN)), NaN);
-  const whOutToday = num(deepGet(s, "energy.totals.wh_out_today", deepGet(s, "energy.summary.wh_out_today", NaN)), NaN);
-  const whNetToday = num(deepGet(s, "energy.totals.wh_net_today", deepGet(s, "energy.summary.wh_net_today", NaN)), NaN);
+  setText("uiWhInToday", Number.isFinite(e.whInToday) ? fmt1(e.whInToday) : "—");
+  setText("uiWhOutToday", Number.isFinite(e.whOutToday) ? fmt1(e.whOutToday) : "—");
+  setText("uiWhNetToday", Number.isFinite(e.whNetToday) ? fmt1(e.whNetToday) : "—");
 
-  const whIn24 = num(deepGet(s, "energy.rolling24h.wh_in_24h", deepGet(s, "energy.summary.wh_in_24h", NaN)), NaN);
-  const whOut24 = num(deepGet(s, "energy.rolling24h.wh_out_24h", deepGet(s, "energy.summary.wh_out_24h", NaN)), NaN);
-  const whNet24 = num(deepGet(s, "energy.rolling24h.wh_net_24h", deepGet(s, "energy.summary.wh_net_24h", NaN)), NaN);
+  setText("uiWhIn24h", Number.isFinite(e.whIn24) ? fmt1(e.whIn24) : "—");
+  setText("uiWhOut24h", Number.isFinite(e.whOut24) ? fmt1(e.whOut24) : "—");
+  setText("uiWhNet24h", Number.isFinite(e.whNet24) ? fmt1(e.whNet24) : "—");
 
-  setText("uiWhInToday", Number.isFinite(whInToday) ? fmt1(whInToday) : "—");
-  setText("uiWhOutToday", Number.isFinite(whOutToday) ? fmt1(whOutToday) : "—");
-  setText("uiWhNetToday", Number.isFinite(whNetToday) ? fmt1(whNetToday) : "—");
-
-  setText("uiWhIn24h", Number.isFinite(whIn24) ? fmt1(whIn24) : "—");
-  setText("uiWhOut24h", Number.isFinite(whOut24) ? fmt1(whOut24) : "—");
-  setText("uiWhNet24h", Number.isFinite(whNet24) ? fmt1(whNet24) : "—");
-
-  // hint u výdrže (na DNES)
-  setText("uiBatHint", (Number.isFinite(pIn) && Number.isFinite(pOut)) ? `Net: ${fmt3(pIn - pOut)} W` : "—");
+  setText("uiBatHint", (Number.isFinite(e.pIn) && Number.isFinite(e.pOut)) ? `Net: ${fmt3(e.pIn - e.pOut)} W` : "—");
 }
 
 // ---------------------------
-// render: Charts (HISTORIE)
+// render: History charts (selected day + weekly)
 // ---------------------------
-function renderCharts(s) {
+function renderHistory(s) {
   ensureCharts();
 
-  const today = deepGet(s, "memory.today", {}) || {};
-  const temp = Array.isArray(today.temperature) ? today.temperature : [];
-  const ein = Array.isArray(today.energyIn) ? today.energyIn : [];
-  const eout = Array.isArray(today.energyOut) ? today.energyOut : [];
-  const light = Array.isArray(today.light) ? today.light : [];
-  const risk = Array.isArray(today.brainRisk) ? today.brainRisk : [];
+  const days = getMemoryDays(s);
+  populateDaySelect(days);
 
-  updateLineChart(chartTemp, temp.map(p => p.t), [
-    { label: "Teplota (°C)", data: temp.map(p => num(p.v)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
+  const sel = el("daySelect");
+  if (sel) {
+    selectedDayKey = sel.value || selectedDayKey;
+  }
+
+  const dayObj =
+    days.find(d => (d.key || d.day || d.date) === selectedDayKey) ||
+    days[days.length - 1] ||
+    null;
+
+  setText("dayInfo", dayObj ? String(dayObj.key || dayObj.day || dayObj.date) : "—");
+
+  const series = dayObj ? dayToSeries(dayObj) : { temp: [], light: [], ein: [], eout: [], risk: [] };
+
+  const tempLabels = series.temp.map(p => toLocalTimeLabel(p.t));
+  const powerLabels = (series.ein.length ? series.ein : series.eout).map(p => toLocalTimeLabel(p.t));
+  const lightLabels = series.light.map(p => toLocalTimeLabel(p.t));
+  const riskLabels = series.risk.map(p => toLocalTimeLabel(p.t));
+
+  updateLineChart(chartTemp, tempLabels, [
+    { label: "Teplota (°C)", data: series.temp.map(p => num(p.v)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
-  updateLineChart(chartPower, ein.map(p => p.t), [
-    { label: "Solár (W)", data: ein.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 },
-    { label: "Zátěž (W)", data: eout.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
+  updateLineChart(chartPower, powerLabels, [
+    { label: "Solár (W)", data: series.ein.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 },
+    { label: "Zátěž (W)", data: series.eout.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
-  updateLineChart(chartLight, light.map(p => p.t), [
-    { label: "Světlo (lx)", data: light.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
+  updateLineChart(chartLight, lightLabels, [
+    { label: "Světlo (lx)", data: series.light.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
-  updateLineChart(chartBrainRisk, risk.map(p => p.t), [
-    { label: "Riziko", data: risk.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
+  updateLineChart(chartBrainRisk, riskLabels, [
+    { label: "Riziko", data: series.risk.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
-  // týdenní grafy
-  const days = Array.isArray(deepGet(s, "memory.days", [])) ? deepGet(s, "memory.days", []) : [];
+  // Weekly aggregates: last 7 days
   const last7 = days.slice(-7);
+  const labels = last7.map(d => d.key || d.day || d.date || "—");
 
-  const labels = last7.map(d => d.key || "—");
   const mins = last7.map(d => {
-    const arr = Array.isArray(d.temperature) ? d.temperature : [];
-    const vals = arr.map(p => num(p.v)).filter(Number.isFinite);
-    return vals.length ? Math.min(...vals) : NaN;
+    const arr = dayToSeries(d).temp.map(p => num(p.v)).filter(Number.isFinite);
+    return arr.length ? Math.min(...arr) : NaN;
   });
   const maxs = last7.map(d => {
-    const arr = Array.isArray(d.temperature) ? d.temperature : [];
-    const vals = arr.map(p => num(p.v)).filter(Number.isFinite);
-    return vals.length ? Math.max(...vals) : NaN;
+    const arr = dayToSeries(d).temp.map(p => num(p.v)).filter(Number.isFinite);
+    return arr.length ? Math.max(...arr) : NaN;
   });
 
-  if (chartWeekTemp) {
-    updateLineChart(chartWeekTemp, labels, [
-      { label: "Min (°C)", data: mins, borderWidth: 2, pointRadius: 0, tension: 0.2 },
-      { label: "Max (°C)", data: maxs, borderWidth: 2, pointRadius: 0, tension: 0.2 }
-    ]);
-  }
+  updateLineChart(chartWeekTemp, labels, [
+    { label: "Min (°C)", data: mins, borderWidth: 2, pointRadius: 0, tension: 0.2 },
+    { label: "Max (°C)", data: maxs, borderWidth: 2, pointRadius: 0, tension: 0.2 }
+  ]);
 
+  // Energy weekly: prefer totals.energyInWh/outWh; fallback from series sums (rough)
   const balances = last7.map(d => {
-    const t = d.totals || {};
-    const inWh = num(t.energyInWh, NaN);
-    const outWh = num(t.energyOutWh, NaN);
-    return (Number.isFinite(inWh) && Number.isFinite(outWh)) ? (inWh - outWh) : NaN;
+    const t = d.totals || d.total || {};
+    const inWh = num(pick(t, ["energyInWh", "whIn", "inWh"], NaN), NaN);
+    const outWh = num(pick(t, ["energyOutWh", "whOut", "outWh"], NaN), NaN);
+    if (Number.isFinite(inWh) && Number.isFinite(outWh)) return inWh - outWh;
+
+    // fallback rough (if you have W samples with uniform spacing unknown -> skip)
+    return NaN;
   });
 
-  if (chartWeekEnergy) {
-    updateLineChart(chartWeekEnergy, labels, [
-      { label: "Bilance (Wh)", data: balances, borderWidth: 2, pointRadius: 0, tension: 0.2 }
-    ]);
-  }
+  updateLineChart(chartWeekEnergy, labels, [
+    { label: "Bilance (Wh)", data: balances, borderWidth: 2, pointRadius: 0, tension: 0.2 }
+  ]);
+
+  // simple daily summary text
+  const headline = dayObj
+    ? `Záznamy: T=${series.temp.length}, L=${series.light.length}, IN=${series.ein.length}, OUT=${series.eout.length}`
+    : "—";
+  setText("daySummaryHeadline", headline);
 }
 
 // ---------------------------
 // render: Events tab
 // ---------------------------
 function renderEventsTab(s) {
-  const list =
-    (Array.isArray(deepGet(s, "events", null)) ? deepGet(s, "events", []) : null) ||
-    (Array.isArray(deepGet(s, "brain.events", null)) ? deepGet(s, "brain.events", []) : null) ||
-    (Array.isArray(deepGet(s, "state.events", null)) ? deepGet(s, "state.events", []) : null) ||
-    [];
+  const list = getEvents(s);
 
   if (!Array.isArray(list) || list.length === 0) {
     setHtml("eventsList", `<div class="muted">— žádné události —</div>`);
     return;
   }
 
-  // nejnovější nahoře
   const items = [...list].slice(-200).reverse().map(ev => {
     const ts = num(ev.ts, NaN);
     const when = Number.isFinite(ts) ? new Date(ts).toLocaleString("cs-CZ") : "—";
@@ -573,7 +799,7 @@ function render(s) {
   renderNightBudget(s);
   renderBrain(s);
   renderEnergyTab(s);
-  renderCharts(s);
+  renderHistory(s);
   renderEventsTab(s);
 
   const rawOn = !!el("chkRaw")?.checked;
@@ -593,7 +819,7 @@ function startLoop() {
   const run = async () => {
     try {
       const s = await fetchState();
-      setText("statusText", `Dashboard • ${new Date(num(deepGet(s, "time.now"), Date.now())).toLocaleString("cs-CZ")}`);
+      setText("statusText", `Dashboard • ${new Date(getNowTs(s)).toLocaleString("cs-CZ")}`);
       render(s);
     } catch (e) {
       setText("statusText", `Dashboard • chyba: ${e.message}`);
@@ -617,11 +843,29 @@ function setupTabs() {
     const panel = el(`tab-${name}`);
     if (panel) panel.classList.add("active");
 
-    // důležité: chart canvas se musí přepočítat až když je panel vidět
-    setTimeout(resizeAllCharts, 60);
+    setTimeout(resizeAllCharts, 80);
   };
 
   tabs.forEach(btn => btn.addEventListener("click", () => activate(btn.getAttribute("data-tab"))));
+}
+
+function setupHistoryControls() {
+  const sel = el("daySelect");
+  const prev = el("btnDayPrev");
+  const next = el("btnDayNext");
+
+  const step = (dir) => {
+    const s = sel;
+    if (!s || s.options.length === 0) return;
+    const i = s.selectedIndex;
+    const ni = clamp(i + dir, 0, s.options.length - 1);
+    s.selectedIndex = ni;
+    selectedDayKey = s.value;
+  };
+
+  if (sel) sel.addEventListener("change", () => { selectedDayKey = sel.value; });
+  if (prev) prev.addEventListener("click", () => step(-1));
+  if (next) next.addEventListener("click", () => step(1));
 }
 
 function setupSettings() {
@@ -655,7 +899,6 @@ function setupSettings() {
     });
   }
 
-  // refresh buttons
   const btns = Array.from(document.querySelectorAll(".chipBtn"));
   btns.forEach(b => b.addEventListener("click", () => {
     const v = Number(b.getAttribute("data-interval") || "1000");
@@ -673,6 +916,7 @@ function setupSettings() {
 
 (async function boot() {
   setupTabs();
+  setupHistoryControls();
   setupSettings();
 
   const q = getBackendFromQuery();
