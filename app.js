@@ -5,6 +5,9 @@
 // - světlo: doplněn env.light (lux) fallback
 // - scénář + fáze: doplněny env.scenario a env.phase fallbacky
 // - Events: adaptér na nový schema {key, action, level, message} i staré {type,msg}
+// - FIX: HISTORIE bere i memory.today (grafy jsou vidět i během dne)
+// - FIX: režim (Noční bilance) bere i brain.mode
+// - FIX: nightBudget baterie/pod5 bere i nb.battery.* (backend starší/novější)
 
 const UI_VERSION = "3.36.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
@@ -234,9 +237,8 @@ function getWorld(s) {
   const w = pick(s, ["world", "state.world", "sim.world", "simulator.world"], {});
   const env = pick(w, ["environment", "env"], w);
 
-  // ✅ světlo: přidán env.light (to je v tvých screenech hlavní)
   const lux = num(pick(env, [
-    "light",            // <-- DŮLEŽITÉ
+    "light",
     "lightLux",
     "lux",
     "bh1750Lux",
@@ -256,7 +258,6 @@ function getWorld(s) {
     "outTempC"
   ], NaN), NaN);
 
-  // ✅ UI 3.36.0: jediná vnitřní teplota = box
   const boxTemp = num(pick(env, [
     "boxTempC",
     "indoorTempC",
@@ -268,10 +269,8 @@ function getWorld(s) {
   ], NaN), NaN);
 
   const indoorTemp = boxTemp;
-
   const indoorHum = num(pick(env, ["indoorHumPct", "indoorHum", "humidity", "humPct", "sht40HumPct"], NaN), NaN);
 
-  // ✅ scénář: z env i z world fallback
   const scenario = pick(env, ["scenario", "scenarioName", "stressPattern"], pick(w, [
     "scenario",
     "activeScenario",
@@ -284,7 +283,6 @@ function getWorld(s) {
     "simScenario"
   ], "—"));
 
-  // ✅ fáze cyklu: z env i z world fallback
   const cyclePhase = pick(env, ["phase", "cyclePhase", "cycle.phase", "cyclePhaseName"], pick(w, [
     "cyclePhase",
     "phase",
@@ -364,16 +362,20 @@ function getNightBudget(s) {
   const reserveWh = num(pick(nb, ["reserveWh", "reserve", "reserve_wh"], NaN), NaN);
   const totalNightBudgetWh = num(pick(nb, ["totalNightBudgetWh", "totalWh", "budgetWh"], NaN), NaN);
 
-  const availableWh = num(pick(nb, ["availableWh", "availWh", "available_wh"], NaN), NaN);
+  const availableWh = num(pick(nb, ["availableWh", "availWh", "available_wh", "battery.availableWh"], NaN), NaN);
 
+  // baterie aktuálně (Wh)
   const batteryWh = num(pick(nb, [
     "batteryWh", "batWh", "battery_wh",
+    "battery.batteryWh",
     "battery.wh", "battery.Wh", "batteryEnergyWh",
     "energy.batteryWh"
   ], NaN), NaN);
 
+  // floor (5%) ve Wh
   const batteryWhAt5 = num(pick(nb, [
     "batteryWhAt5", "floorWh", "whAt5", "battery_wh_at_5",
+    "battery.batteryWhAt5",
     "floor.wh", "batteryFloorWh",
     "batterySafe.floorWh", "battery_safe.floorWh",
     "limits.batteryWhAt5"
@@ -388,7 +390,10 @@ function getNightBudget(s) {
 }
 
 function getBatterySafeMode(s) {
+  // ✅ FIX: režim u tebe je realně v brain.mode (NORMAL/CAUTION/CRITICAL/PROTECT)
   const mode = pick(s, [
+    "brain.mode",
+    "brain.policy.mode",
     "brain.batterySafe.mode",
     "brain.battery_safe.mode",
     "brain.batterySafeMode",
@@ -418,7 +423,29 @@ function getEvents(s) {
 
 function getMemoryDays(s) {
   const days = pick(s, ["memory.days", "history.days", "days"], []);
-  return Array.isArray(days) ? days : [];
+  const out = Array.isArray(days) ? [...days] : [];
+
+  // ✅ FIX: během dne jsou data v memory.today, ne v memory.days
+  const today = pick(s, ["memory.today"], null);
+  if (today && typeof today === "object") {
+    const key = today.key || today.day || today.date;
+    if (key) {
+      const merged = {
+        key,
+        temperature: today.temperature || [],
+        light: today.light || [],
+        brainRisk: today.brainRisk || [],
+        energyIn: today.energyIn || [],
+        energyOut: today.energyOut || [],
+        totals: today.totals || {}
+      };
+      const i = out.findIndex(d => (d.key || d.day || d.date) === key);
+      if (i >= 0) out[i] = merged;
+      else out.push(merged);
+    }
+  }
+
+  return out;
 }
 
 // ---------------------------
@@ -455,7 +482,6 @@ function dayToSeries(day) {
   for (const p of samples) {
     const ts = p.ts ?? p.t ?? p.time ?? p.x;
 
-    // ✅ preferuj boxTempC (vnitřní = box)
     const tempV =
       p.boxTempC ??
       p.indoorTempC ??
@@ -514,7 +540,6 @@ function renderTodayCards(s) {
   setText("uiLight", fmt0(w.lux));
   setText("uiSolarPot", fmt1(w.solarPot));
 
-  // ✅ UI 3.36.0: nepoužívej uiTemp (odstraněno z UI), pouze box + venek
   setText("uiBoxTemp", fmt1(w.boxTemp));
   setText("uiHum", fmt0(w.indoorHum));
   setText("uiOutdoorTemp", fmt1(w.outdoorTemp));
@@ -594,7 +619,7 @@ function renderBrain(s) {
 
   const chips = [];
   const bs = getBatterySafeMode(s);
-  if (bs && bs !== "—") chips.push(`Battery-safe: ${bs}`);
+  if (bs && bs !== "—") chips.push(`Režim: ${bs}`);
   const cov = num(pick(s, ["brain.nightBudget.coveragePct", "nightBudget.coveragePct"], NaN), NaN);
   if (Number.isFinite(cov)) chips.push(`Noční bilance: ${fmt0(cov)}%`);
   setHtml("uiBrainChips", chips.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(""));
@@ -729,7 +754,6 @@ function renderEventsTab(s) {
     const ts = num(ev.ts, NaN);
     const when = Number.isFinite(ts) ? new Date(ts).toLocaleString("cs-CZ") : (ev.t ? escapeHtml(ev.t) : "—");
 
-    // nové schema: { key, action, level, message }
     const key = ev.key || ev.type || ev.kind || "event";
     const action = ev.action || "";
     const level = ev.level || "";
