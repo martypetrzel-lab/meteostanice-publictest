@@ -1,8 +1,8 @@
 // app.js – Meteostanice UI (robust schema adapter)
-// Fix:
-// - hodnoty byly "—" protože /state schema se liší -> čteme z více fallback cest
-// - HISTORIE: plní daySelect z memory.days a grafy kreslí z vybraného dne
-// - bezpečné: když něco v backendu není, UI zůstane stabilní
+// B 3.35.4 fixes:
+// - Noční bilance: režim (battery-safe) čtený z více reálných cest
+// - World: scénář doplněné fallback klíče
+// - NightBudget: batteryWh + batteryWhAt5 doplněné fallback klíče
 
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
@@ -47,7 +47,6 @@ function escapeHtml(s) {
     .replaceAll("'", "&#39;");
 }
 function toLocalTimeLabel(tsOrStr) {
-  // podporuje: epoch ms, ISO string, "HH:MM"
   if (tsOrStr === null || tsOrStr === undefined) return "—";
   if (typeof tsOrStr === "string" && /^\d{2}:\d{2}/.test(tsOrStr)) return tsOrStr.slice(0, 5);
 
@@ -97,30 +96,6 @@ async function fetchState() {
   const r = await fetch(`${backend}/state`, { cache: "no-store" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
-}
-
-// ---------------------------
-// risk history store
-// ---------------------------
-function loadRiskTrend() {
-  try {
-    const raw = localStorage.getItem(RISK_STORE_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch { return []; }
-}
-function saveRiskTrend(arr) {
-  const trimmed = arr.slice(-MAX_RISK_POINTS);
-  localStorage.setItem(RISK_STORE_KEY, JSON.stringify(trimmed));
-}
-function pushRiskPoint(ts, risk) {
-  const arr = loadRiskTrend();
-  arr.push({ ts, v: risk });
-  const cutoff = ts - RISK_WINDOW_MS;
-  const filtered = arr.filter(p => p.ts >= cutoff);
-  saveRiskTrend(filtered);
-  return filtered;
 }
 
 // ---------------------------
@@ -224,55 +199,6 @@ window.addEventListener("resize", () => {
 });
 
 // ---------------------------
-// riskCanvas (simple sparkline)
-// ---------------------------
-function drawRiskCanvas(points) {
-  const c = el("riskCanvas");
-  if (!c) return;
-  const ctx = c.getContext("2d");
-  if (!ctx) return;
-
-  const parent = c.parentElement;
-  if (parent) {
-    const w = Math.max(320, parent.clientWidth - 8);
-    c.width = w;
-  }
-  const w = c.width;
-  const h = c.height;
-
-  ctx.clearRect(0, 0, w, h);
-
-  ctx.globalAlpha = 0.22;
-  ctx.beginPath();
-  for (let i = 1; i < 5; i++) {
-    const y = (h / 5) * i;
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-  }
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  if (!points || points.length < 2) return;
-
-  const minV = 0;
-  const maxV = 100;
-
-  const minTs = points[0].ts;
-  const maxTs = points[points.length - 1].ts;
-  const span = Math.max(1, maxTs - minTs);
-
-  ctx.beginPath();
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const x = ((R  => (R.ts - minTs) / span)(R) * (w - 2) + 1);
-    const y = h - (((clamp(R.v, minV, maxV) - minV) / (maxV - minV)) * (h - 2) + 1);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-}
-
-// ---------------------------
 // label maps
 // ---------------------------
 function powerStateCz(s) {
@@ -313,8 +239,20 @@ function getWorld(s) {
   const indoorHum = num(pick(env, ["indoorHumPct", "humidity", "humPct", "sht40HumPct"], NaN), NaN);
   const boxTemp = num(pick(env, ["boxTempC", "tempBoxC", "enclosureTempC"], NaN), NaN);
 
-  const scenario = pick(w, ["scenario", "activeScenario", "scenarioName"], "—");
-  const cyclePhase = pick(w, ["cyclePhase", "phase", "cycle.phase"], "—");
+  // ✅ FIX: doplněné scénář klíče (u tebe byl scénář —)
+  const scenario = pick(w, [
+    "scenario",
+    "activeScenario",
+    "scenarioName",
+    "scenarioId",
+    "scenarioType",
+    "weatherScenario",
+    "weather.scenario",
+    "worldScenario",
+    "simScenario"
+  ], "—");
+
+  const cyclePhase = pick(w, ["cyclePhase", "phase", "cycle.phase", "cyclePhaseName"], "—");
 
   const wind = num(pick(env, ["windMs", "wind_mps", "wind"], NaN), NaN);
   const raining = !!pick(env, ["raining", "rain", "isRaining"], false);
@@ -371,13 +309,15 @@ function getBattery(s) {
   const socRaw = num(pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)), NaN);
   const socPct = Number.isFinite(socRaw) ? toPercentMaybe01(socRaw) : NaN;
 
-  const wh = num(pick(b, ["wh", "energyWh", "batteryWh"], NaN), NaN);
+  // ✅ FIX: doplněné batteryWh fallbacky
+  const wh = num(pick(b, ["wh", "Wh", "energyWh", "batteryWh"], pick(s, ["batteryWh", "energy.batteryWh", "state.energy.batteryWh"], NaN)), NaN);
+
   return { socPct, wh };
 }
 
 function getNightBudget(s) {
-  const nb = pick(s, ["brain.nightBudget", "nightBudget", "brain.batterySafe.nightBudget"], {});
-  // coverage/deficit ti už jdou -> jen doplníme fallback klíče
+  const nb = pick(s, ["brain.nightBudget", "nightBudget", "brain.batterySafe.nightBudget", "brain.battery_safe.nightBudget"], {});
+
   const coveragePct = num(pick(nb, ["coveragePct", "coverage", "coverage_percent"], NaN), NaN);
   const deficitWh = num(pick(nb, ["deficitWh", "deficit", "deficit_wh"], NaN), NaN);
 
@@ -388,22 +328,45 @@ function getNightBudget(s) {
   const totalNightBudgetWh = num(pick(nb, ["totalNightBudgetWh", "totalWh", "budgetWh"], NaN), NaN);
 
   const availableWh = num(pick(nb, ["availableWh", "availWh", "available_wh"], NaN), NaN);
-  const batteryWh = num(pick(nb, ["batteryWh", "batWh", "battery_wh"], NaN), NaN);
-  const batteryWhAt5 = num(pick(nb, ["batteryWhAt5", "floorWh", "whAt5"], NaN), NaN);
 
-  return { coveragePct, deficitWh, remainingNightHours, pNightSelectedW, nightNeedWh, reserveWh, totalNightBudgetWh, availableWh, batteryWh, batteryWhAt5 };
+  // ✅ FIX: batteryWh + batteryWhAt5 fallbacky (u tebe byly —)
+  const batteryWh = num(pick(nb, [
+    "batteryWh", "batWh", "battery_wh",
+    "battery.wh", "battery.Wh", "batteryEnergyWh",
+    "energy.batteryWh"
+  ], NaN), NaN);
+
+  const batteryWhAt5 = num(pick(nb, [
+    "batteryWhAt5", "floorWh", "whAt5", "battery_wh_at_5",
+    "floor.wh", "batteryFloorWh",
+    "batterySafe.floorWh", "battery_safe.floorWh",
+    "limits.batteryWhAt5"
+  ], NaN), NaN);
+
+  return {
+    coveragePct, deficitWh,
+    remainingNightHours, pNightSelectedW,
+    nightNeedWh, reserveWh, totalNightBudgetWh,
+    availableWh, batteryWh, batteryWhAt5
+  };
 }
 
 function getBatterySafeMode(s) {
-  // u tebe se režim v noční bilanci zobrazuje jako "—", ale event log má ENTER NORMAL -> někde to je
+  // ✅ FIX: více reálných cest – u tebe to zjevně není tam, kde bylo původně
   const mode = pick(s, [
     "brain.batterySafe.mode",
+    "brain.battery_safe.mode",
     "brain.batterySafeMode",
     "brain.battery_safe_mode",
-    "brain.modeBatterySafe",
-    "brain.battery.mode",
+    "brain.batterySafe.modeName",
+    "brain.batterySafe.state",
+    "brain.batterySafeState",
     "batterySafe.mode",
-    "batterySafeMode"
+    "battery_safe.mode",
+    "batterySafeMode",
+    "battery_safe_mode",
+    "batterySafe.state",
+    "batterySafeState"
   ], "—");
   return mode || "—";
 }
@@ -422,15 +385,11 @@ function getMemoryDays(s) {
   const days = pick(s, ["memory.days", "history.days", "days"], []);
   return Array.isArray(days) ? days : [];
 }
-function getTodayKey(s) {
-  return pick(s, ["memory.todayKey", "memory.today.key", "todayKey", "dayKey"], null);
-}
 
 // ---------------------------
-// HISTORIE data extraction
+// HISTORIE helpers
 // ---------------------------
 function normalizeSeries(arr) {
-  // podporuje: [{t,v}] nebo [{ts,v}] nebo [{time,value}]
   if (!Array.isArray(arr)) return [];
   return arr.map(p => {
     const t = (p.t !== undefined) ? p.t : (p.ts !== undefined ? p.ts : (p.time !== undefined ? p.time : p.x));
@@ -439,8 +398,6 @@ function normalizeSeries(arr) {
   }).filter(p => p.t !== undefined);
 }
 function dayToSeries(day) {
-  // Standard: day.temperature / day.light / day.energyIn / day.energyOut / day.brainRisk
-  // Fallback: day.samples[] s {ts, indoorTempC/outdoorTempC/lux/solarW/loadW/risk}
   const t1 = normalizeSeries(day.temperature || day.temp || []);
   const l1 = normalizeSeries(day.light || day.lux || []);
   const in1 = normalizeSeries(day.energyIn || day.solar || day.pIn || []);
@@ -552,6 +509,7 @@ function renderTodayCards(s) {
 // ---------------------------
 function renderNightBudget(s) {
   const nb = getNightBudget(s);
+
   setText("uiNightMode", getBatterySafeMode(s));
   setText("uiNightCoverage", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
   setText("uiNightDeficit", Number.isFinite(nb.deficitWh) ? fmt1(nb.deficitWh) : "—");
@@ -588,47 +546,6 @@ function renderBrain(s) {
   setText("uiBatHours", fmt1(num(pick(s, ["brain.battery.hours", "brain.batteryHours"], NaN), NaN)));
   setText("uiSunLine", String(pick(s, ["brain.time.hoursToSunset", "brain.hoursToSunsetEst", "hoursToSunsetEst"], "—")));
   setText("uiSunHint", String(pick(s, ["brain.solar.untilSunsetWh", "brain.solarRemainingWhToSunset", "solarRemainingWhToSunset"], "—")));
-
-  const now = getNowTs(s);
-  if (Number.isFinite(risk)) {
-    const pts = pushRiskPoint(now, clamp(risk, 0, 100));
-    // (riskCanvas) když není, nic se neděje
-    try {
-      const c = el("riskCanvas");
-      if (c) {
-        const ctx = c.getContext("2d");
-        if (ctx) {
-          // jednoduché vykreslení bez extra závislostí
-          ctx.clearRect(0, 0, c.width, c.height);
-          ctx.globalAlpha = 0.22;
-          ctx.beginPath();
-          for (let i = 1; i < 5; i++) {
-            const y = (c.height / 5) * i;
-            ctx.moveTo(0, y);
-            ctx.lineTo(c.width, y);
-          }
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-
-          if (pts.length >= 2) {
-            const minTs = pts[0].ts;
-            const maxTs = pts[pts.length - 1].ts;
-            const span = Math.max(1, maxTs - minTs);
-
-            ctx.beginPath();
-            for (let i = 0; i < pts.length; i++) {
-              const p = pts[i];
-              const x = ((p.ts - minTs) / span) * (c.width - 2) + 1;
-              const y = c.height - (((clamp(p.v, 0, 100)) / 100) * (c.height - 2) + 1);
-              if (i === 0) ctx.moveTo(x, y);
-              else ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-          }
-        }
-      }
-    } catch {}
-  }
 
   const chips = [];
   const bs = getBatterySafeMode(s);
@@ -684,9 +601,7 @@ function renderHistory(s) {
   populateDaySelect(days);
 
   const sel = el("daySelect");
-  if (sel) {
-    selectedDayKey = sel.value || selectedDayKey;
-  }
+  if (sel) selectedDayKey = sel.value || selectedDayKey;
 
   const dayObj =
     days.find(d => (d.key || d.day || d.date) === selectedDayKey) ||
@@ -719,7 +634,6 @@ function renderHistory(s) {
     { label: "Riziko", data: series.risk.map(p => num(p.v, 0)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
-  // Weekly aggregates: last 7 days
   const last7 = days.slice(-7);
   const labels = last7.map(d => d.key || d.day || d.date || "—");
 
@@ -737,14 +651,11 @@ function renderHistory(s) {
     { label: "Max (°C)", data: maxs, borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
-  // Energy weekly: prefer totals.energyInWh/outWh; fallback from series sums (rough)
   const balances = last7.map(d => {
     const t = d.totals || d.total || {};
     const inWh = num(pick(t, ["energyInWh", "whIn", "inWh"], NaN), NaN);
     const outWh = num(pick(t, ["energyOutWh", "whOut", "outWh"], NaN), NaN);
     if (Number.isFinite(inWh) && Number.isFinite(outWh)) return inWh - outWh;
-
-    // fallback rough (if you have W samples with uniform spacing unknown -> skip)
     return NaN;
   });
 
@@ -752,7 +663,6 @@ function renderHistory(s) {
     { label: "Bilance (Wh)", data: balances, borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
-  // simple daily summary text
   const headline = dayObj
     ? `Záznamy: T=${series.temp.length}, L=${series.light.length}, IN=${series.ein.length}, OUT=${series.eout.length}`
     : "—";
@@ -763,14 +673,14 @@ function renderHistory(s) {
 // render: Events tab
 // ---------------------------
 function renderEventsTab(s) {
-  const list = getEvents(s);
-
-  if (!Array.isArray(list) || list.length === 0) {
+  const list = pick(s, ["events", "state.events", "brain.events", "brain.eventLog"], []);
+  const arr = Array.isArray(list) ? list : [];
+  if (arr.length === 0) {
     setHtml("eventsList", `<div class="muted">— žádné události —</div>`);
     return;
   }
 
-  const items = [...list].slice(-200).reverse().map(ev => {
+  const items = [...arr].slice(-200).reverse().map(ev => {
     const ts = num(ev.ts, NaN);
     const when = Number.isFinite(ts) ? new Date(ts).toLocaleString("cs-CZ") : "—";
     const type = escapeHtml(ev.type || ev.kind || "event");
