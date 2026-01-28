@@ -600,12 +600,40 @@ function renderNightBudget(s) {
 // render: Brain
 // ---------------------------
 function renderBrain(s) {
-  const dailyMsg = pick(s, [
-  "brain.dailyMessage",     // ✅ ESP32 HW
-  "brain.message.text",     // fallback (simulátor)
-  "brain.message",
-  "brain.msg"
-], "—");
+  // hlavní hláška pro DNES (ESP32 HW posílá brain.dailyMessage)
+  const msgText = pick(s, [
+    "brain.dailyMessage",     // ✅ ESP32 HW
+    "brain.message.text",     // fallback simulátor
+    "brain.message",
+    "brain.msg"
+  ], "—");
+
+  const details = pick(s, ["brain.message.details", "brain.details"], []);
+  const mode = pick(s, ["brain.mode", "brain.policy.mode"], "—");
+
+  setText("uiMsg", msgText || "—");
+  setText("uiDetails", Array.isArray(details) ? details.join(" • ") : String(details || "—"));
+  setText("uiModeBadge", mode || "—");
+
+  const risk = num(pick(s, ["brain.risk", "brain.riskScore", "brain.riskPct"], NaN), NaN);
+  setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
+
+  const bar = el("uiRiskBar");
+  if (bar && Number.isFinite(risk)) bar.style.width = `${clamp(risk, 0, 100)}%`;
+
+  setText("uiBatHours", fmt1(num(pick(s, ["brain.battery.hours", "brain.batteryHours"], NaN), NaN)));
+  setText("uiSunLine", String(pick(s, ["brain.time.hoursToSunset", "brain.hoursToSunset", "hoursToSunsetEst"], "—")));
+  setText("uiSunHint", String(pick(s, ["brain.solar.untilSunsetWh", "brain.solarRemainingWhToSunset"], "—")));
+
+  const chips = [];
+  const bs = getBatterySafeMode(s);
+  if (bs && bs !== "—") chips.push(`Režim: ${bs}`);
+  const cov = num(pick(s, ["brain.nightBudget.coveragePct", "nightBudget.coveragePct"], NaN), NaN);
+  if (Number.isFinite(cov)) chips.push(`Noční bilance: ${fmt0(cov)}%`);
+
+  setHtml("uiBrainChips", chips.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(""));
+}
+
 
 setText("uiMsg", dailyMsg || "—");
 
