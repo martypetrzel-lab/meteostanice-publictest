@@ -1,6 +1,8 @@
-// app.js – Meteostanice UI (robust schema adapter) – UI 3.36.1 (ESP32 HW compatible)
-// HW FIX: device.fan je boolean (ESP32 posílá doc["device"]["fan"] = true/false)
-// HW FIX: tolerantnější čtení isDay a solarPotentialW (ESP32 používá time.isDay + world.environment.solarPotentialW)
+// app.js – Meteostanice UI (ESP32 HW compatible adapter) – UI 3.36.1
+// FIX: SOC z ESP32 je v energy.soc.soc_est (0..1)
+// FIX: Badge "DAY/NIGHT" bere z time.isDay (ne z brain.mode)
+// FIX: Battery-safe = brain.mode (NORMAL/CAUTION/CRITICAL/PROTECT)
+// FIX: noční bilance bere z brain.nightBudget.* a je robustní vůči null
 // UX: Historie label teploty: "Venkovní teplota"
 
 const UI_VERSION = "3.36.1";
@@ -57,6 +59,7 @@ function toPercentMaybe01(x) {
   if (!Number.isFinite(x)) return NaN;
   return x <= 1.2 ? x * 100 : x;
 }
+function dayNightLabel(isDay) { return isDay ? "DAY" : "NIGHT"; }
 
 // ---------------------------
 // backend selection
@@ -85,7 +88,9 @@ function setBackend(v) {
 async function fetchState() {
   const backend = getBackend();
   setHref("stateLink", `${backend}/state`);
-  const r = await fetch(`${backend}/state`, { cache: "no-store" });
+  // cache-bust, ať se to nelepí
+  const url = `${backend}/state?_=${Date.now()}`;
+  const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -213,63 +218,32 @@ function fmtQ(q) {
 }
 
 // ---------------------------
-// HW FIX helpers
-// ---------------------------
-function getFanOn(s) {
-  // ESP32: device.fan = boolean
-  const v = pick(s, ["device.fan", "device.fan.on", "fan.on", "device.sensors.fan", "device.power.fan"], null);
-  return v === true || v === 1 || v === "1" || v === "ON";
-}
-function getIsDay(s) {
-  const v = pick(s, ["time.isDay", "world.environment.isDay", "world.environment.phase", "phase"], null);
-  if (typeof v === "boolean") return v;
-  if (typeof v === "string") {
-    const u = v.toUpperCase();
-    if (u === "DAY") return true;
-    if (u === "NIGHT") return false;
-  }
-  return null;
-}
-
-// ---------------------------
 // SCHEMA ADAPTERS
 // ---------------------------
 function getNowTs(s) {
   return num(pick(s, ["time.now", "now", "ts", "timestamp"], Date.now()), Date.now());
 }
 
+function getIsDay(s) {
+  // ESP32: time.isDay
+  const v = pick(s, ["time.isDay", "world.time.isDay"], null);
+  if (v === null || v === undefined) return true;
+  return !!v;
+}
+
 function getWorld(s) {
   const w = pick(s, ["world", "state.world", "sim.world", "simulator.world"], {});
   const env = pick(w, ["environment", "env"], w);
 
-  const lux = num(pick(env, [
-    "light", "lightLux", "lux", "bh1750Lux", "worldLux", "environmentLux"
-  ], NaN), NaN);
+  const lux = num(pick(env, ["light", "lightLux", "lux", "bh1750Lux", "worldLux", "environmentLux"], NaN), NaN);
+  const solarPot = num(pick(env, ["solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW"], NaN), NaN);
 
-  // ESP32: world.environment.solarPotentialW = aktuální PinW
-  const solarPot = num(pick(env, [
-    "solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW",
-    "solarInW" // fallback
-  ], NaN), NaN);
-
-  const outdoorTemp = num(pick(env, [
-    "outdoorTempC", "airTempC", "temperature", "tempOutdoorC", "outsideTempC", "ds18b20C", "outTempC"
-  ], NaN), NaN);
-
-  const boxTemp = num(pick(env, [
-    "boxTempC", "indoorTempC", "tempBoxC", "enclosureTempC", "sht40TempC", "insideTempC", "tempC"
-  ], NaN), NaN);
-
+  const outdoorTemp = num(pick(env, ["outdoorTempC", "airTempC", "temperature", "tempOutdoorC", "outsideTempC", "ds18b20C", "outTempC"], NaN), NaN);
+  const boxTemp = num(pick(env, ["boxTempC", "indoorTempC", "tempBoxC", "enclosureTempC", "sht40TempC", "insideTempC", "tempC"], NaN), NaN);
   const indoorHum = num(pick(env, ["indoorHumPct", "indoorHum", "humidity", "humPct", "sht40HumPct"], NaN), NaN);
 
-  const scenario = pick(env, ["scenario", "scenarioName", "stressPattern"], pick(w, [
-    "scenario", "activeScenario", "scenarioName", "scenarioId", "scenarioType",
-    "weatherScenario", "weather.scenario", "worldScenario", "simScenario"
-  ], "—"));
-
-  const cyclePhase = pick(env, ["phase", "cyclePhase", "cycle.phase", "cyclePhaseName"], pick(w, [
-    "cyclePhase", "phase", "cycle.phase", "cyclePhaseName"
-  ], "—"));
+  const scenario = pick(env, ["scenario", "scenarioName", "stressPattern"], pick(w, ["scenario", "activeScenario", "scenarioName"], "—"));
+  const cyclePhase = pick(env, ["phase", "cyclePhase", "cycle.phase", "cyclePhaseName"], pick(w, ["cyclePhase", "phase", "cycle.phase"], "—"));
 
   const wind = num(pick(env, ["windMs", "wind_mps", "wind"], NaN), NaN);
   const raining = !!pick(env, ["raining", "rain", "isRaining"], false);
@@ -285,14 +259,12 @@ function getEnergy(s) {
   const inaOut = pick(e, ["ina_out", "inaOut", "out"], {});
   const sum = pick(e, ["summary", "totals", "stats"], {});
 
-  // ESP32: ina_in.p_raw / p_ema
   const pIn = num(pick(e, ["p_in_raw", "pInW"], pick(inaIn, ["p_raw", "p", "powerW"], pick(sum, ["p_in_raw", "p_in", "pIn"], NaN))), NaN);
   const pOut = num(pick(e, ["p_out_raw", "pOutW"], pick(inaOut, ["p_raw", "p", "powerW"], pick(sum, ["p_out_raw", "p_out", "pOut"], NaN))), NaN);
 
   const pInEma = num(pick(inaIn, ["p_ema", "ema", "powerEmaW"], pick(sum, ["p_in_ema", "pInEma"], NaN)), NaN);
   const pOutEma = num(pick(inaOut, ["p_ema", "ema", "powerEmaW"], pick(sum, ["p_out_ema", "pOutEma"], NaN)), NaN);
 
-  // ESP32: energy.states.power_state + power_path_state
   const powerState = pick(e, ["states.power_state", "power_state", "powerState"], pick(sum, ["power_state", "powerState"], "—"));
   const powerPath = pick(e, ["states.power_path_state", "power_path_state", "powerPathState"], pick(sum, ["power_path_state", "powerPathState"], "—"));
 
@@ -309,8 +281,9 @@ function getEnergy(s) {
   const whOut24 = num(pick(e, ["rolling24h.wh_out_24h", "wh_out_24h", "whOut24h"], pick(sum, ["wh_out_24h", "whOut24h"], NaN)), NaN);
   const whNet24 = num(pick(e, ["rolling24h.wh_net_24h", "wh_net_24h", "whNet24h"], pick(sum, ["wh_net_24h", "whNet24h"], NaN)), NaN);
 
-  const socEst = num(pick(e, ["soc.soc_est", "soc_est"], pick(sum, ["soc_est", "socEst"], NaN)), NaN);
-  const socConf = num(pick(e, ["soc.soc_confidence", "soc_confidence"], pick(sum, ["soc_confidence", "socConfidence"], NaN)), NaN);
+  // ESP32: energy.soc.soc_est (0..1)
+  const socEst = num(pick(e, ["soc.soc_est", "soc_est"], NaN), NaN);
+  const socConf = num(pick(e, ["soc.soc_confidence", "soc_confidence"], NaN), NaN);
 
   return {
     pIn, pOut, pInEma, pOutEma,
@@ -324,40 +297,29 @@ function getEnergy(s) {
 }
 
 function getBattery(s) {
-  // 1) ESP32: SOC je v energy.soc.soc_est (0..1)
+  // ESP32: SOC 0..1 v energy.soc.soc_est
   const soc01 = num(pick(s, ["energy.soc.soc_est"], NaN), NaN);
 
-  // 2) Sim/legacy: SOC může být v device.battery.soc nebo podobně
+  // legacy
   const b = pick(s, ["device.battery", "battery", "state.battery"], {});
-  const socRaw = num(
-    pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)),
-    NaN
-  );
+  const socRaw = num(pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)), NaN);
 
-  // rozhodnutí zdroje
   let socPct = NaN;
-  if (Number.isFinite(soc01)) {
-    socPct = soc01 * 100;
-  } else if (Number.isFinite(socRaw)) {
-    socPct = toPercentMaybe01(socRaw);
-  }
+  if (Number.isFinite(soc01)) socPct = soc01 * 100;
+  else if (Number.isFinite(socRaw)) socPct = toPercentMaybe01(socRaw);
 
-  // Wh: ESP32 posílá batteryWh v brain.nightBudget.batteryWh
-  const wh = num(
-    pick(s, [
-      "brain.nightBudget.batteryWh",  // ESP32
-      "device.battery.wh",
-      "battery.wh",
-      "batteryWh",
-      "energy.batteryWh",
-      "state.energy.batteryWh"
-    ], NaN),
-    NaN
-  );
+  // ESP32: batteryWh je v brain.nightBudget.batteryWh
+  const wh = num(pick(s, [
+    "brain.nightBudget.batteryWh",
+    "device.battery.wh",
+    "battery.wh",
+    "batteryWh",
+    "energy.batteryWh",
+    "state.energy.batteryWh"
+  ], NaN), NaN);
 
   return { socPct, wh };
 }
-
 
 function getNightBudget(s) {
   const nb = pick(s, ["brain.nightBudget", "nightBudget", "brain.batterySafe.nightBudget", "brain.battery_safe.nightBudget"], {});
@@ -423,7 +385,6 @@ function getEvents(s) {
 }
 
 function getMemoryDays(s) {
-  // ESP32: memory = { version, days:[], today:{} }
   const days = pick(s, ["memory.days", "history.days", "days"], []);
   const out = Array.isArray(days) ? [...days] : [];
 
@@ -549,13 +510,11 @@ function renderTodayCards(s) {
   setText("uiSolar", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
   setText("uiLoad", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
 
-  // HW FIX: device.fan je boolean
-  setText("uiFan", getFanOn(s) ? "ON" : "OFF");
+  // fan (ESP32: device.fan je bool)
+  setText("uiFan", pick(s, ["device.fan", "device.fan.on", "fan.on"], null) === true ? "ON" : "OFF");
 
-  const mode = getBatterySafeMode(s);         // NORMAL/CAUTION/...
-  const isDay = !!pick(s, ["time.isDay"], false); // true/false
-  setText("uiBatSafe", mode || (isDay ? "DAY" : "NIGHT"));
-
+  // Battery-safe = režim mozku
+  setText("uiBatSafe", getBatterySafeMode(s));
 
   const nb = getNightBudget(s);
   setText("uiCovQuick", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
@@ -563,34 +522,18 @@ function renderTodayCards(s) {
 
   setText("uiPowerState", powerStateCz(e.powerState));
   setText("uiPowerPath", powerPathCz(e.powerPath));
-
-  // (volitelně) můžeš si v HTML někde zobrazit i isDay, ale UI už má phase
-  // const isDay = getIsDay(s);
 }
 
 // ---------------------------
 // render: Night budget panel
 // ---------------------------
-function renderNightBudget(s) {  const isDay = !!pick(s, ["time.isDay"], false);
-  if (isDay) {
-    // ve dne noční panel jen informativně
-    setText("uiNightMode", getBatterySafeMode(s));
-    setText("uiNightCoverage", "—");
-    setText("uiNightDeficit", "—");
-    setText("uiNightHours", "—");
-    setText("uiNightP", "—");
-    setText("uiNightNeed", "—");
-    setText("uiNightReserve", "—");
-    setText("uiNightTotal", "—");
-    setText("uiNightAvail", "—");
-    setText("uiNightBat", "—");
-    setText("uiNightFloor", "—");
-    return;
-  }
-
+function renderNightBudget(s) {
   const nb = getNightBudget(s);
+  const isDay = getIsDay(s);
 
-  setText("uiNightMode", getBatterySafeMode(s));
+  // "Režim" v noční bilanci je DAY/NIGHT (ne brain.mode)
+  setText("uiNightMode", dayNightLabel(isDay));
+
   setText("uiNightCoverage", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
   setText("uiNightDeficit", Number.isFinite(nb.deficitWh) ? fmt1(nb.deficitWh) : "—");
 
@@ -610,32 +553,39 @@ function renderNightBudget(s) {  const isDay = !!pick(s, ["time.isDay"], false);
 // render: Brain
 // ---------------------------
 function renderBrain(s) {
+  const isDay = getIsDay(s);
+
   const msgText = pick(s, [
     "brain.dailyMessage",   // ESP32 HW
-    "brain.message.text",   // fallback
+    "brain.message.text",
     "brain.message",
     "brain.msg"
   ], "—");
 
   const details = pick(s, ["brain.message.details", "brain.details"], []);
-  const mode = pick(s, ["brain.mode", "brain.policy.mode"], "—");
+  const mode = getBatterySafeMode(s);
 
+  // Hláška
   setText("uiMsg", msgText || "—");
   setText("uiDetails", Array.isArray(details) ? details.join(" • ") : String(details || "—"));
-  setText("uiModeBadge", mode || "—");
+
+  // Badge vpravo v boxu: DAY/NIGHT (podle času)
+  setText("uiModeBadge", dayNightLabel(isDay));
 
   const risk = num(pick(s, ["brain.risk", "brain.riskScore", "brain.riskPct"], NaN), NaN);
   setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
   const bar = el("uiRiskBar");
-  if (bar && Number.isFinite(risk)) bar.style.width = `${clamp(risk, 0, 100)}%`;
+  if (bar) bar.style.width = Number.isFinite(risk) ? `${clamp(risk, 0, 100)}%` : "0%";
 
+  // Výdrž
   setText("uiBatHours", fmt1(num(pick(s, ["brain.battery.hours", "brain.batteryHours"], NaN), NaN)));
+
+  // Slunce (ESP32: brain.time.hoursToSunset a brain.solar.untilSunsetWh)
   setText("uiSunLine", String(pick(s, ["brain.time.hoursToSunset", "brain.hoursToSunset", "hoursToSunsetEst"], "—")));
   setText("uiSunHint", String(pick(s, ["brain.solar.untilSunsetWh", "brain.solarRemainingWhToSunset", "solarRemainingWhToSunset"], "—")));
 
   const chips = [];
-  const bs = getBatterySafeMode(s);
-  if (bs && bs !== "—") chips.push(`Režim: ${bs}`);
+  if (mode && mode !== "—") chips.push(`Režim: ${mode}`);
   const cov = num(pick(s, ["brain.nightBudget.coveragePct", "nightBudget.coveragePct"], NaN), NaN);
   if (Number.isFinite(cov)) chips.push(`Noční bilance: ${fmt0(cov)}%`);
   setHtml("uiBrainChips", chips.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(""));
@@ -822,8 +772,9 @@ function startLoop() {
 
   const run = async () => {
     try {
+      const backend = getBackend();
       const s = await fetchState();
-      setText("statusText", `Dashboard • ${new Date(getNowTs(s)).toLocaleString("cs-CZ")} • UI ${UI_VERSION}`);
+      setText("statusText", `Dashboard • ${new Date(getNowTs(s)).toLocaleString("cs-CZ")} • UI ${UI_VERSION} • ${backend}`);
       render(s);
     } catch (e) {
       setText("statusText", `Dashboard • chyba: ${e.message} • UI ${UI_VERSION}`);
@@ -894,7 +845,7 @@ function setupSettings() {
     btnTest.addEventListener("click", async () => {
       try {
         const backend = getBackend();
-        const r = await fetch(`${backend}/health`, { cache: "no-store" });
+        const r = await fetch(`${backend}/health?_=${Date.now()}`, { cache: "no-store" });
         const ok = r.ok;
         if (healthOut) healthOut.textContent = ok ? "OK" : `Chyba ${r.status}`;
       } catch (e) {
@@ -919,6 +870,8 @@ function setupSettings() {
 }
 
 (async function boot() {
+  console.log(`[UI] boot ${UI_VERSION}`, new Date().toISOString());
+
   setupTabs();
   setupHistoryControls();
   setupSettings();
