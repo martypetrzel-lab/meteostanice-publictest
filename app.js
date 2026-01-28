@@ -552,8 +552,10 @@ function renderTodayCards(s) {
   // HW FIX: device.fan je boolean
   setText("uiFan", getFanOn(s) ? "ON" : "OFF");
 
-  const batSafe = getBatterySafeMode(s);
-  setText("uiBatSafe", batSafe);
+  const mode = getBatterySafeMode(s);         // NORMAL/CAUTION/...
+  const isDay = !!pick(s, ["time.isDay"], false); // true/false
+  setText("uiBatSafe", mode || (isDay ? "DAY" : "NIGHT"));
+
 
   const nb = getNightBudget(s);
   setText("uiCovQuick", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
@@ -569,7 +571,23 @@ function renderTodayCards(s) {
 // ---------------------------
 // render: Night budget panel
 // ---------------------------
-function renderNightBudget(s) {
+function renderNightBudget(s) {  const isDay = !!pick(s, ["time.isDay"], false);
+  if (isDay) {
+    // ve dne noční panel jen informativně
+    setText("uiNightMode", getBatterySafeMode(s));
+    setText("uiNightCoverage", "—");
+    setText("uiNightDeficit", "—");
+    setText("uiNightHours", "—");
+    setText("uiNightP", "—");
+    setText("uiNightNeed", "—");
+    setText("uiNightReserve", "—");
+    setText("uiNightTotal", "—");
+    setText("uiNightAvail", "—");
+    setText("uiNightBat", "—");
+    setText("uiNightFloor", "—");
+    return;
+  }
+
   const nb = getNightBudget(s);
 
   setText("uiNightMode", getBatterySafeMode(s));
