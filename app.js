@@ -600,7 +600,15 @@ function renderNightBudget(s) {
 // render: Brain
 // ---------------------------
 function renderBrain(s) {
-  const msg = pick(s, ["brain.message.text", "brain.message", "brain.msg"], "—");
+  const dailyMsg = pick(s, [
+  "brain.dailyMessage",     // ✅ ESP32 HW
+  "brain.message.text",     // fallback (simulátor)
+  "brain.message",
+  "brain.msg"
+], "—");
+
+setText("uiMsg", dailyMsg || "—");
+
   const details = pick(s, ["brain.message.details", "brain.details"], []);
   const mode = pick(s, ["brain.mode", "brain.policy.mode"], "—");
 
