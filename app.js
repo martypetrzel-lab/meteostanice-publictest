@@ -8,6 +8,8 @@
 // - FIX: HISTORIE bere i memory.today (grafy jsou vidět i během dne)
 // - FIX: režim (Noční bilance) bere i brain.mode
 // - FIX: nightBudget baterie/pod5 bere i nb.battery.* (backend starší/novější)
+// - ✅ HISTORIE: graf teploty je venkovní (ne box)
+// - ✅ DNES: denní hláška z brain.dailyMessage
 
 const UI_VERSION = "3.36.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
@@ -158,7 +160,7 @@ let chartWeekEnergy = null;
 function ensureCharts() {
   if (!chartTemp) {
     chartTemp = createChart("chartTemp", [], [
-      { label: "Teplota (°C)", data: [], borderWidth: 2, pointRadius: 0, tension: 0.2 }
+      { label: "Venkovní teplota (°C)", data: [], borderWidth: 2, pointRadius: 0, tension: 0.2 }
     ], "°C");
   }
   if (!chartPower) {
@@ -364,7 +366,6 @@ function getNightBudget(s) {
 
   const availableWh = num(pick(nb, ["availableWh", "availWh", "available_wh", "battery.availableWh"], NaN), NaN);
 
-  // baterie aktuálně (Wh)
   const batteryWh = num(pick(nb, [
     "batteryWh", "batWh", "battery_wh",
     "battery.batteryWh",
@@ -372,7 +373,6 @@ function getNightBudget(s) {
     "energy.batteryWh"
   ], NaN), NaN);
 
-  // floor (5%) ve Wh
   const batteryWhAt5 = num(pick(nb, [
     "batteryWhAt5", "floorWh", "whAt5", "battery_wh_at_5",
     "battery.batteryWhAt5",
@@ -390,7 +390,6 @@ function getNightBudget(s) {
 }
 
 function getBatterySafeMode(s) {
-  // ✅ FIX: režim u tebe je realně v brain.mode (NORMAL/CAUTION/CRITICAL/PROTECT)
   const mode = pick(s, [
     "brain.mode",
     "brain.policy.mode",
@@ -425,14 +424,13 @@ function getMemoryDays(s) {
   const days = pick(s, ["memory.days", "history.days", "days"], []);
   const out = Array.isArray(days) ? [...days] : [];
 
-  // ✅ FIX: během dne jsou data v memory.today, ne v memory.days
   const today = pick(s, ["memory.today"], null);
   if (today && typeof today === "object") {
     const key = today.key || today.day || today.date;
     if (key) {
       const merged = {
         key,
-        temperature: today.temperature || [],
+        temperature: today.temperature || [], // ✅ tady je venkovní teplota
         light: today.light || [],
         brainRisk: today.brainRisk || [],
         energyIn: today.energyIn || [],
@@ -460,7 +458,7 @@ function normalizeSeries(arr) {
   }).filter(p => p.t !== undefined);
 }
 function dayToSeries(day) {
-  const t1 = normalizeSeries(day.temperature || day.temp || []);
+  const t1 = normalizeSeries(day.temperature || day.temp || []); // ✅ venkovní teplota
   const l1 = normalizeSeries(day.light || day.lux || []);
   const in1 = normalizeSeries(day.energyIn || day.solar || day.pIn || []);
   const out1 = normalizeSeries(day.energyOut || day.load || day.pOut || []);
@@ -482,14 +480,16 @@ function dayToSeries(day) {
   for (const p of samples) {
     const ts = p.ts ?? p.t ?? p.time ?? p.x;
 
+    // ✅ venkovní teplota preferovaně
     const tempV =
-      p.boxTempC ??
-      p.indoorTempC ??
-      p.tempC ??
+      p.outdoorTempC ??
+      p.airTempC ??
+      p.ds18b20C ??
+      p.outTempC ??
+      p.temperatureOutdoorC ??
+      // fallback starší schémata
       p.temperatureC ??
-      p.enclosureTempC ??
-      p.sht40TempC ??
-      p.airTempC;
+      p.tempC;
 
     const luxV = p.lux ?? p.lightLux;
     const inV = p.solarW ?? p.pInW ?? p.inW;
@@ -604,6 +604,10 @@ function renderBrain(s) {
   const details = pick(s, ["brain.message.details", "brain.details"], []);
   const mode = pick(s, ["brain.mode", "brain.policy.mode"], "—");
 
+  // ✅ denní hláška
+  const daily = pick(s, ["brain.dailyMessage", "brain.daily.message", "brain.daily"], "—");
+  setText("uiDailyMsg", daily || "—");
+
   setText("uiMsg", msg || "—");
   setText("uiDetails", Array.isArray(details) ? details.join(" • ") : String(details || "—"));
   setText("uiModeBadge", mode || "—");
@@ -688,7 +692,7 @@ function renderHistory(s) {
   const riskLabels = series.risk.map(p => toLocalTimeLabel(p.t));
 
   updateLineChart(chartTemp, tempLabels, [
-    { label: "Teplota (°C)", data: series.temp.map(p => num(p.v)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
+    { label: "Venkovní teplota (°C)", data: series.temp.map(p => num(p.v)), borderWidth: 2, pointRadius: 0, tension: 0.2 }
   ]);
 
   updateLineChart(chartPower, powerLabels, [

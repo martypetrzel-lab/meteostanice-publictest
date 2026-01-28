@@ -93,6 +93,10 @@
             <div class="brainTop">
               <div class="brainMsg">
                 <div class="msg" id="uiMsg">—</div>
+
+                <!-- ✅ Denní hláška do DNES -->
+                <div class="msgSub" id="uiDailyMsg">—</div>
+
                 <div class="msgSub" id="uiDetails">—</div>
               </div>
               <div class="brainBadge" id="uiModeBadge">—</div>
@@ -150,7 +154,7 @@
 
           <div class="grid2">
             <div class="chartCard">
-              <div class="chartTitle">Teplota boxu (°C)</div>
+              <div class="chartTitle">Venkovní teplota (°C)</div>
               <canvas id="chartTemp"></canvas>
             </div>
             <div class="chartCard">
@@ -183,7 +187,7 @@
           </div>
 
           <div class="chartCard">
-            <div class="chartTitle">Týdenní min/max teplota boxu (°C)</div>
+            <div class="chartTitle">Týdenní min/max venkovní teplota (°C)</div>
             <canvas id="chartWeekTemp"></canvas>
           </div>
           <div class="chartCard">
