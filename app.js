@@ -1,9 +1,9 @@
-// app.js – Meteostanice UI (robust schema adapter) – UI 3.36.0
-// FIX: msg is not defined -> renderBrain používá msgText (dailyMessage fallbacky)
-// FIX: denní hláška primárně z brain.dailyMessage (ESP32 HW)
+// app.js – Meteostanice UI (robust schema adapter) – UI 3.36.1 (ESP32 HW compatible)
+// HW FIX: device.fan je boolean (ESP32 posílá doc["device"]["fan"] = true/false)
+// HW FIX: tolerantnější čtení isDay a solarPotentialW (ESP32 používá time.isDay + world.environment.solarPotentialW)
 // UX: Historie label teploty: "Venkovní teplota"
 
-const UI_VERSION = "3.36.0";
+const UI_VERSION = "3.36.1";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
@@ -213,6 +213,25 @@ function fmtQ(q) {
 }
 
 // ---------------------------
+// HW FIX helpers
+// ---------------------------
+function getFanOn(s) {
+  // ESP32: device.fan = boolean
+  const v = pick(s, ["device.fan", "device.fan.on", "fan.on", "device.sensors.fan", "device.power.fan"], null);
+  return v === true || v === 1 || v === "1" || v === "ON";
+}
+function getIsDay(s) {
+  const v = pick(s, ["time.isDay", "world.environment.isDay", "world.environment.phase", "phase"], null);
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const u = v.toUpperCase();
+    if (u === "DAY") return true;
+    if (u === "NIGHT") return false;
+  }
+  return null;
+}
+
+// ---------------------------
 // SCHEMA ADAPTERS
 // ---------------------------
 function getNowTs(s) {
@@ -227,8 +246,10 @@ function getWorld(s) {
     "light", "lightLux", "lux", "bh1750Lux", "worldLux", "environmentLux"
   ], NaN), NaN);
 
+  // ESP32: world.environment.solarPotentialW = aktuální PinW
   const solarPot = num(pick(env, [
-    "solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW"
+    "solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW",
+    "solarInW" // fallback
   ], NaN), NaN);
 
   const outdoorTemp = num(pick(env, [
@@ -264,12 +285,14 @@ function getEnergy(s) {
   const inaOut = pick(e, ["ina_out", "inaOut", "out"], {});
   const sum = pick(e, ["summary", "totals", "stats"], {});
 
+  // ESP32: ina_in.p_raw / p_ema
   const pIn = num(pick(e, ["p_in_raw", "pInW"], pick(inaIn, ["p_raw", "p", "powerW"], pick(sum, ["p_in_raw", "p_in", "pIn"], NaN))), NaN);
   const pOut = num(pick(e, ["p_out_raw", "pOutW"], pick(inaOut, ["p_raw", "p", "powerW"], pick(sum, ["p_out_raw", "p_out", "pOut"], NaN))), NaN);
 
   const pInEma = num(pick(inaIn, ["p_ema", "ema", "powerEmaW"], pick(sum, ["p_in_ema", "pInEma"], NaN)), NaN);
   const pOutEma = num(pick(inaOut, ["p_ema", "ema", "powerEmaW"], pick(sum, ["p_out_ema", "pOutEma"], NaN)), NaN);
 
+  // ESP32: energy.states.power_state + power_path_state
   const powerState = pick(e, ["states.power_state", "power_state", "powerState"], pick(sum, ["power_state", "powerState"], "—"));
   const powerPath = pick(e, ["states.power_path_state", "power_path_state", "powerPathState"], pick(sum, ["power_path_state", "powerPathState"], "—"));
 
@@ -302,6 +325,7 @@ function getEnergy(s) {
 
 function getBattery(s) {
   const b = pick(s, ["device.battery", "battery", "state.battery"], {});
+  // ESP32: device.battery.soc (0..1) + wh
   const socRaw = num(pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)), NaN);
   const socPct = Number.isFinite(socRaw) ? toPercentMaybe01(socRaw) : NaN;
   const wh = num(pick(b, ["wh", "Wh", "energyWh", "batteryWh"], pick(s, ["batteryWh", "energy.batteryWh", "state.energy.batteryWh"], NaN)), NaN);
@@ -372,6 +396,7 @@ function getEvents(s) {
 }
 
 function getMemoryDays(s) {
+  // ESP32: memory = { version, days:[], today:{} }
   const days = pick(s, ["memory.days", "history.days", "days"], []);
   const out = Array.isArray(days) ? [...days] : [];
 
@@ -497,7 +522,8 @@ function renderTodayCards(s) {
   setText("uiSolar", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
   setText("uiLoad", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
 
-  setText("uiFan", pick(s, ["device.fan.on", "fan.on"], null) ? "ON" : "—");
+  // HW FIX: device.fan je boolean
+  setText("uiFan", getFanOn(s) ? "ON" : "OFF");
 
   const batSafe = getBatterySafeMode(s);
   setText("uiBatSafe", batSafe);
@@ -508,6 +534,9 @@ function renderTodayCards(s) {
 
   setText("uiPowerState", powerStateCz(e.powerState));
   setText("uiPowerPath", powerPathCz(e.powerPath));
+
+  // (volitelně) můžeš si v HTML někde zobrazit i isDay, ale UI už má phase
+  // const isDay = getIsDay(s);
 }
 
 // ---------------------------
@@ -533,7 +562,7 @@ function renderNightBudget(s) {
 }
 
 // ---------------------------
-// render: Brain (FIX msg is not defined)
+// render: Brain
 // ---------------------------
 function renderBrain(s) {
   const msgText = pick(s, [
