@@ -324,13 +324,40 @@ function getEnergy(s) {
 }
 
 function getBattery(s) {
+  // 1) ESP32: SOC je v energy.soc.soc_est (0..1)
+  const soc01 = num(pick(s, ["energy.soc.soc_est"], NaN), NaN);
+
+  // 2) Sim/legacy: SOC může být v device.battery.soc nebo podobně
   const b = pick(s, ["device.battery", "battery", "state.battery"], {});
-  // ESP32: device.battery.soc (0..1) + wh
-  const socRaw = num(pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)), NaN);
-  const socPct = Number.isFinite(socRaw) ? toPercentMaybe01(socRaw) : NaN;
-  const wh = num(pick(b, ["wh", "Wh", "energyWh", "batteryWh"], pick(s, ["batteryWh", "energy.batteryWh", "state.energy.batteryWh"], NaN)), NaN);
+  const socRaw = num(
+    pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)),
+    NaN
+  );
+
+  // rozhodnutí zdroje
+  let socPct = NaN;
+  if (Number.isFinite(soc01)) {
+    socPct = soc01 * 100;
+  } else if (Number.isFinite(socRaw)) {
+    socPct = toPercentMaybe01(socRaw);
+  }
+
+  // Wh: ESP32 posílá batteryWh v brain.nightBudget.batteryWh
+  const wh = num(
+    pick(s, [
+      "brain.nightBudget.batteryWh",  // ESP32
+      "device.battery.wh",
+      "battery.wh",
+      "batteryWh",
+      "energy.batteryWh",
+      "state.energy.batteryWh"
+    ], NaN),
+    NaN
+  );
+
   return { socPct, wh };
 }
+
 
 function getNightBudget(s) {
   const nb = pick(s, ["brain.nightBudget", "nightBudget", "brain.batterySafe.nightBudget", "brain.battery_safe.nightBudget"], {});
