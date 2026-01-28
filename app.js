@@ -1,22 +1,10 @@
-// app.js – Meteostanice UI (robust schema adapter)
-// UI 3.36.0:
-// - jen 1 vnitřní teplota = teplota boxu (SHT40 / boxTempC)
-// - vnější teplota zvlášť (DS18B20 / airTempC / outdoorTempC)
-// - světlo: doplněn env.light (lux) fallback
-// - scénář + fáze: doplněny env.scenario a env.phase fallbacky
-// - Events: adaptér na nový schema {key, action, level, message} i staré {type,msg}
-// - FIX: HISTORIE bere i memory.today (grafy jsou vidět i během dne)
-// - FIX: režim (Noční bilance) bere i brain.mode
-// - FIX: nightBudget baterie/pod5 bere i nb.battery.* (backend starší/novější)
-// - ✅ HISTORIE: graf teploty je venkovní (ne box)
-// - ✅ DNES: denní hláška z brain.dailyMessage
+// app.js – Meteostanice UI (robust schema adapter) – UI 3.36.0
+// FIX: msg is not defined -> renderBrain používá msgText (dailyMessage fallbacky)
+// FIX: denní hláška primárně z brain.dailyMessage (ESP32 HW)
+// UX: Historie label teploty: "Venkovní teplota"
 
 const UI_VERSION = "3.36.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
-
-const RISK_STORE_KEY = "risk_trend_v1";
-const RISK_WINDOW_MS = 2 * 60 * 60 * 1000;
-const MAX_RISK_POINTS = 360;
 
 const el = (id) => document.getElementById(id);
 const setText = (id, text) => { const e = el(id); if (e) e.textContent = text; };
@@ -26,7 +14,6 @@ const show = (id, on) => { const e = el(id); if (e) e.classList.toggle("hidden",
 
 const fmt0 = (x) => (Number.isFinite(x) ? Math.round(x) : "—");
 const fmt1 = (x) => (Number.isFinite(x) ? (Math.round(x * 10) / 10) : "—");
-const fmt2 = (x) => (Number.isFinite(x) ? (Math.round(x * 100) / 100) : "—");
 const fmt3 = (x) => (Number.isFinite(x) ? (Math.round(x * 1000) / 1000) : "—");
 
 function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
@@ -80,9 +67,7 @@ function getBackendFromQuery() {
     const api = u.searchParams.get("api");
     if (api && api.trim()) return api.trim().replace(/\/+$/, "");
     return null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 function getBackend() {
   const saved = localStorage.getItem("backendUrl");
@@ -97,7 +82,6 @@ function setBackend(v) {
   localStorage.setItem("backendUrl", normalizeBackend(v));
   setHref("stateLink", `${getBackend()}/state`);
 }
-
 async function fetchState() {
   const backend = getBackend();
   setHref("stateLink", `${backend}/state`);
@@ -229,7 +213,7 @@ function fmtQ(q) {
 }
 
 // ---------------------------
-// SCHEMA ADAPTERS (robust getters)
+// SCHEMA ADAPTERS
 // ---------------------------
 function getNowTs(s) {
   return num(pick(s, ["time.now", "now", "ts", "timestamp"], Date.now()), Date.now());
@@ -240,56 +224,30 @@ function getWorld(s) {
   const env = pick(w, ["environment", "env"], w);
 
   const lux = num(pick(env, [
-    "light",
-    "lightLux",
-    "lux",
-    "bh1750Lux",
-    "worldLux",
-    "environmentLux"
+    "light", "lightLux", "lux", "bh1750Lux", "worldLux", "environmentLux"
   ], NaN), NaN);
 
-  const solarPot = num(pick(env, ["solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW"], NaN), NaN);
+  const solarPot = num(pick(env, [
+    "solarPotentialW", "solarPotential", "solarPotential_w", "solarPotentialWatts", "solarPotentialPowerW"
+  ], NaN), NaN);
 
   const outdoorTemp = num(pick(env, [
-    "outdoorTempC",
-    "airTempC",
-    "temperature",
-    "tempOutdoorC",
-    "outsideTempC",
-    "ds18b20C",
-    "outTempC"
+    "outdoorTempC", "airTempC", "temperature", "tempOutdoorC", "outsideTempC", "ds18b20C", "outTempC"
   ], NaN), NaN);
 
   const boxTemp = num(pick(env, [
-    "boxTempC",
-    "indoorTempC",
-    "tempBoxC",
-    "enclosureTempC",
-    "sht40TempC",
-    "insideTempC",
-    "tempC"
+    "boxTempC", "indoorTempC", "tempBoxC", "enclosureTempC", "sht40TempC", "insideTempC", "tempC"
   ], NaN), NaN);
 
-  const indoorTemp = boxTemp;
   const indoorHum = num(pick(env, ["indoorHumPct", "indoorHum", "humidity", "humPct", "sht40HumPct"], NaN), NaN);
 
   const scenario = pick(env, ["scenario", "scenarioName", "stressPattern"], pick(w, [
-    "scenario",
-    "activeScenario",
-    "scenarioName",
-    "scenarioId",
-    "scenarioType",
-    "weatherScenario",
-    "weather.scenario",
-    "worldScenario",
-    "simScenario"
+    "scenario", "activeScenario", "scenarioName", "scenarioId", "scenarioType",
+    "weatherScenario", "weather.scenario", "worldScenario", "simScenario"
   ], "—"));
 
   const cyclePhase = pick(env, ["phase", "cyclePhase", "cycle.phase", "cyclePhaseName"], pick(w, [
-    "cyclePhase",
-    "phase",
-    "cycle.phase",
-    "cyclePhaseName"
+    "cyclePhase", "phase", "cycle.phase", "cyclePhaseName"
   ], "—"));
 
   const wind = num(pick(env, ["windMs", "wind_mps", "wind"], NaN), NaN);
@@ -297,7 +255,7 @@ function getWorld(s) {
   const thunder = !!pick(env, ["thunder", "storm", "isThunder"], false);
   const snowing = !!pick(env, ["snowing", "snow", "isSnowing"], false);
 
-  return { lux, solarPot, outdoorTemp, indoorTemp, indoorHum, boxTemp, scenario, cyclePhase, wind, raining, thunder, snowing };
+  return { lux, solarPot, outdoorTemp, boxTemp, indoorHum, scenario, cyclePhase, wind, raining, thunder, snowing };
 }
 
 function getEnergy(s) {
@@ -346,9 +304,7 @@ function getBattery(s) {
   const b = pick(s, ["device.battery", "battery", "state.battery"], {});
   const socRaw = num(pick(b, ["soc", "socPct", "percent"], pick(s, ["soc", "batterySoc"], NaN)), NaN);
   const socPct = Number.isFinite(socRaw) ? toPercentMaybe01(socRaw) : NaN;
-
   const wh = num(pick(b, ["wh", "Wh", "energyWh", "batteryWh"], pick(s, ["batteryWh", "energy.batteryWh", "state.energy.batteryWh"], NaN)), NaN);
-
   return { socPct, wh };
 }
 
@@ -397,15 +353,10 @@ function getBatterySafeMode(s) {
     "brain.battery_safe.mode",
     "brain.batterySafeMode",
     "brain.battery_safe_mode",
-    "brain.batterySafe.modeName",
-    "brain.batterySafe.state",
-    "brain.batterySafeState",
     "batterySafe.mode",
     "battery_safe.mode",
     "batterySafeMode",
-    "battery_safe_mode",
-    "batterySafe.state",
-    "batterySafeState"
+    "battery_safe_mode"
   ], "—");
   return mode || "—";
 }
@@ -430,7 +381,7 @@ function getMemoryDays(s) {
     if (key) {
       const merged = {
         key,
-        temperature: today.temperature || [], // ✅ tady je venkovní teplota
+        temperature: today.temperature || [],
         light: today.light || [],
         brainRisk: today.brainRisk || [],
         energyIn: today.energyIn || [],
@@ -442,7 +393,6 @@ function getMemoryDays(s) {
       else out.push(merged);
     }
   }
-
   return out;
 }
 
@@ -458,12 +408,11 @@ function normalizeSeries(arr) {
   }).filter(p => p.t !== undefined);
 }
 function dayToSeries(day) {
-  const t1 = normalizeSeries(day.temperature || day.temp || []); // ✅ venkovní teplota
+  const t1 = normalizeSeries(day.temperature || day.temp || []);
   const l1 = normalizeSeries(day.light || day.lux || []);
   const in1 = normalizeSeries(day.energyIn || day.solar || day.pIn || []);
   const out1 = normalizeSeries(day.energyOut || day.load || day.pOut || []);
   const r1 = normalizeSeries(day.brainRisk || day.risk || []);
-
   if (t1.length || l1.length || in1.length || out1.length || r1.length) {
     return { temp: t1, light: l1, ein: in1, eout: out1, risk: r1 };
   }
@@ -471,25 +420,13 @@ function dayToSeries(day) {
   const samples = Array.isArray(day.samples) ? day.samples : (Array.isArray(day.points) ? day.points : []);
   if (!samples.length) return { temp: [], light: [], ein: [], eout: [], risk: [] };
 
-  const temp = [];
-  const light = [];
-  const ein = [];
-  const eout = [];
-  const risk = [];
-
+  const temp = [], light = [], ein = [], eout = [], risk = [];
   for (const p of samples) {
     const ts = p.ts ?? p.t ?? p.time ?? p.x;
 
-    // ✅ venkovní teplota preferovaně
     const tempV =
-      p.outdoorTempC ??
-      p.airTempC ??
-      p.ds18b20C ??
-      p.outTempC ??
-      p.temperatureOutdoorC ??
-      // fallback starší schémata
-      p.temperatureC ??
-      p.tempC;
+      p.outdoorTempC ?? p.airTempC ?? p.outTempC ?? p.ds18b20C ??
+      p.boxTempC ?? p.indoorTempC ?? p.tempC ?? p.temperatureC ?? p.enclosureTempC ?? p.sht40TempC;
 
     const luxV = p.lux ?? p.lightLux;
     const inV = p.solarW ?? p.pInW ?? p.inW;
@@ -502,7 +439,6 @@ function dayToSeries(day) {
     if (outV !== undefined) eout.push({ t: ts, v: outV });
     if (riskV !== undefined) risk.push({ t: ts, v: riskV });
   }
-
   return { temp, light, ein, eout, risk };
 }
 
@@ -597,13 +533,12 @@ function renderNightBudget(s) {
 }
 
 // ---------------------------
-// render: Brain
+// render: Brain (FIX msg is not defined)
 // ---------------------------
 function renderBrain(s) {
-  // hlavní hláška pro DNES (ESP32 HW posílá brain.dailyMessage)
   const msgText = pick(s, [
-    "brain.dailyMessage",     // ✅ ESP32 HW
-    "brain.message.text",     // fallback simulátor
+    "brain.dailyMessage",   // ESP32 HW
+    "brain.message.text",   // fallback
     "brain.message",
     "brain.msg"
   ], "—");
@@ -617,44 +552,11 @@ function renderBrain(s) {
 
   const risk = num(pick(s, ["brain.risk", "brain.riskScore", "brain.riskPct"], NaN), NaN);
   setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
-
   const bar = el("uiRiskBar");
   if (bar && Number.isFinite(risk)) bar.style.width = `${clamp(risk, 0, 100)}%`;
 
   setText("uiBatHours", fmt1(num(pick(s, ["brain.battery.hours", "brain.batteryHours"], NaN), NaN)));
   setText("uiSunLine", String(pick(s, ["brain.time.hoursToSunset", "brain.hoursToSunset", "hoursToSunsetEst"], "—")));
-  setText("uiSunHint", String(pick(s, ["brain.solar.untilSunsetWh", "brain.solarRemainingWhToSunset"], "—")));
-
-  const chips = [];
-  const bs = getBatterySafeMode(s);
-  if (bs && bs !== "—") chips.push(`Režim: ${bs}`);
-  const cov = num(pick(s, ["brain.nightBudget.coveragePct", "nightBudget.coveragePct"], NaN), NaN);
-  if (Number.isFinite(cov)) chips.push(`Noční bilance: ${fmt0(cov)}%`);
-
-  setHtml("uiBrainChips", chips.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(""));
-}
-
-
-setText("uiMsg", dailyMsg || "—");
-
-  const details = pick(s, ["brain.message.details", "brain.details"], []);
-  const mode = pick(s, ["brain.mode", "brain.policy.mode"], "—");
-
-  // ✅ denní hláška
-  const daily = pick(s, ["brain.dailyMessage", "brain.daily.message", "brain.daily"], "—");
-  setText("uiDailyMsg", daily || "—");
-
-  setText("uiMsg", msg || "—");
-  setText("uiDetails", Array.isArray(details) ? details.join(" • ") : String(details || "—"));
-  setText("uiModeBadge", mode || "—");
-
-  const risk = num(pick(s, ["brain.risk", "brain.riskScore", "brain.riskPct"], NaN), NaN);
-  setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
-  const bar = el("uiRiskBar");
-  if (bar && Number.isFinite(risk)) bar.style.width = `${clamp(risk, 0, 100)}%`;
-
-  setText("uiBatHours", fmt1(num(pick(s, ["brain.battery.hours", "brain.batteryHours"], NaN), NaN)));
-  setText("uiSunLine", String(pick(s, ["brain.time.hoursToSunset", "brain.hoursToSunsetEst", "hoursToSunsetEst"], "—")));
   setText("uiSunHint", String(pick(s, ["brain.solar.untilSunsetWh", "brain.solarRemainingWhToSunset", "solarRemainingWhToSunset"], "—")));
 
   const chips = [];
@@ -702,7 +604,7 @@ function renderEnergyTab(s) {
 }
 
 // ---------------------------
-// render: History charts (selected day + weekly)
+// render: History charts
 // ---------------------------
 function renderHistory(s) {
   ensureCharts();
