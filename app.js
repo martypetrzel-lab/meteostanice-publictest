@@ -32,7 +32,7 @@ const safeKindFromMode = (mode) => {
 };
 
 // ---------------------------
-// UI extras: sparklines + flow + brain reasons (UI 3.39.0)
+// UI extras: sparklines + flow + brain reasons (UI 3.39.1)
 // ---------------------------
 const SPARK_MAX = 120; // ~2h při 60s, nebo kratší při rychlejším refreshi
 const spark = {
