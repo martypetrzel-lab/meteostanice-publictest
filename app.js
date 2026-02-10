@@ -5,7 +5,7 @@
 // FIX: noční bilance bere z brain.nightBudget.* a je robustní vůči null
 // UX: Historie label teploty: "Venkovní teplota"
 
-const UI_VERSION = "3.38.1";
+const UI_VERSION = "3.39.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
@@ -30,6 +30,171 @@ const safeKindFromMode = (mode) => {
   if (m === "PROTECT") return "bad";
   return "neutral";
 };
+
+// ---------------------------
+// UI extras: sparklines + flow + brain reasons (UI 3.39.0)
+// ---------------------------
+const SPARK_MAX = 120; // ~2h při 60s, nebo kratší při rychlejším refreshi
+const spark = {
+  soc: [], solar: [], load: [], net: [], risk: []
+};
+function pushSpark(arr, v){
+  if (!Number.isFinite(v)) return;
+  arr.push(v);
+  if (arr.length > SPARK_MAX) arr.splice(0, arr.length - SPARK_MAX);
+}
+function drawSpark(canvasId, arr){
+  const c = el(canvasId);
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+
+  const w = c.width, h = c.height;
+  ctx.clearRect(0,0,w,h);
+
+  if (!arr || arr.length < 2) {
+    // subtle baseline
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    ctx.moveTo(0, h-1);
+    ctx.lineTo(w, h-1);
+    ctx.strokeStyle = "rgba(255,255,255,.25)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  const minV = Math.min(...arr);
+  const maxV = Math.max(...arr);
+  const span = (maxV - minV) || 1;
+
+  // background
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "rgba(255,255,255,.05)";
+  ctx.fillRect(0,0,w,h);
+  ctx.globalAlpha = 1;
+
+  // line
+  ctx.beginPath();
+  const n = arr.length;
+  for (let i=0;i<n;i++){
+    const x = (i/(n-1)) * (w-2) + 1;
+    const y = h - 2 - ((arr[i] - minV)/span) * (h-4);
+    if (i===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = "rgba(124,192,255,.95)";
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.stroke();
+
+  // fill (soft)
+  ctx.lineTo(w-1, h-1);
+  ctx.lineTo(1, h-1);
+  ctx.closePath();
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = "rgba(124,192,255,1)";
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawAllSparks(){
+  drawSpark("sparkSoc", spark.soc);
+  drawSpark("sparkSolar", spark.solar);
+  drawSpark("sparkLoad", spark.load);
+  drawSpark("sparkNet", spark.net);
+  drawSpark("sparkRisk", spark.risk);
+}
+
+function setArrowActive(id, kind){
+  const a = el(id);
+  if (!a) return;
+  a.classList.remove("activeOk","activeWarn","activeBad");
+  if (kind === "ok") a.classList.add("activeOk");
+  else if (kind === "warn") a.classList.add("activeWarn");
+  else if (kind === "bad") a.classList.add("activeBad");
+}
+
+function renderEnergyFlow(s){
+  const bat = getBattery(s);
+  const e = getEnergy(s);
+
+  setText("flowSolarVal", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
+  setText("flowSocVal", Number.isFinite(bat.socPct) ? fmt0(bat.socPct) : "—");
+  setText("flowLoadVal", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
+
+  // Aktivace šipek podle power path
+  const path = String(e.powerPath || "").toUpperCase();
+  // default: tlumené
+  setArrowActive("flowArrow1", "");
+  setArrowActive("flowArrow2", "");
+
+  // když teče ze soláru (SOLAR_TO_...), zvýrazni první šipku
+  if (path.includes("SOLAR")) {
+    setArrowActive("flowArrow1", "ok");
+  } else if (Number.isFinite(e.pIn) && e.pIn > 0.05) {
+    setArrowActive("flowArrow1", "ok");
+  }
+
+  // když se vybíjí do zátěže (BATT_TO_LOAD), zvýrazni druhou šipku
+  if (path.includes("BATT") || path.includes("BAT")) {
+    setArrowActive("flowArrow2", "warn");
+  } else if (Number.isFinite(e.pOut) && e.pOut > 0.05) {
+    setArrowActive("flowArrow2", "warn");
+  }
+
+  // když je výstup a zároveň solár nulový → “bad” na druhé šipce
+  if ((Number.isFinite(e.pOut) && e.pOut > 0.2) && (!Number.isFinite(e.pIn) || e.pIn < 0.02)) {
+    setArrowActive("flowArrow2", "bad");
+  }
+}
+
+function renderBrainReasons(s){
+  const bat = getBattery(s);
+  const e = getEnergy(s);
+  const nb = getNightBudget(s);
+  const isDay = getIsDay(s);
+
+  const reasons = [];
+
+  // 1) SOC
+  if (Number.isFinite(bat.socPct)) {
+    if (bat.socPct <= 10) reasons.push({t:`SOC velmi nízké (${fmt0(bat.socPct)}%)`, k:"bad"});
+    else if (bat.socPct <= 25) reasons.push({t:`SOC nízké (${fmt0(bat.socPct)}%)`, k:"warn"});
+    else reasons.push({t:`SOC OK (${fmt0(bat.socPct)}%)`, k:"ok"});
+  }
+
+  // 2) Solár
+  if (Number.isFinite(e.pIn)) {
+    if (e.pIn < 0.02) reasons.push({t:"Solár téměř 0 W", k: isDay ? "warn" : "neutral"});
+    else reasons.push({t:`Solár ${fmt3(e.pIn)} W`, k:"ok"});
+  }
+
+  // 3) NET
+  const netW = (Number.isFinite(e.pIn) && Number.isFinite(e.pOut)) ? (e.pIn - e.pOut) : NaN;
+  if (Number.isFinite(netW)) {
+    if (netW < -0.15) reasons.push({t:`NET záporný (${fmt3(netW)} W)`, k:"warn"});
+    else if (netW > 0.10) reasons.push({t:`NET kladný (+${fmt3(netW)} W)`, k:"ok"});
+  }
+
+  // 4) Noční deficit
+  if (Number.isFinite(nb.deficitWh)) {
+    if (nb.deficitWh > 0.5) reasons.push({t:`Noční deficit ${fmt1(nb.deficitWh)} Wh`, k:"warn"});
+    else reasons.push({t:"Noční deficit OK", k:"ok"});
+  }
+
+  // vyber 2–3 nejdůležitější (priorita: bad>warn>ok>neutral)
+  const prio = {bad:3, warn:2, ok:1, neutral:0};
+  const top = reasons
+    .slice()
+    .sort((a,b)=> (prio[b.k]??0)-(prio[a.k]??0))
+    .slice(0,3);
+
+  setHtml("uiBrainReasons", top.map(r => `<span class="reason ${escapeHtml(r.k)}">${escapeHtml(r.t)}</span>`).join(""));
+}
+
 const setHref = (id, href) => { const e = el(id); if (e) e.href = href; };
 const show = (id, on) => { const e = el(id); if (e) e.classList.toggle("hidden", !on); };
 
@@ -515,6 +680,9 @@ function renderTodayCards(s) {
   setText("uiScenario", String(w.scenario || "—"));
   setText("uiPhase", String(w.cyclePhase || "—"));
 
+  // hero reasons
+  renderBrainReasons(s);
+
   const chips = [];
   if (w.raining) chips.push("Déšť");
   if (w.thunder) chips.push("Bouřka");
@@ -539,6 +707,15 @@ function renderTodayCards(s) {
   setText("uiKpiSolar", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
   setText("uiKpiLoad", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
   setText("uiKpiNet", Number.isFinite(netW) ? fmt3(netW) : "—");
+
+  // sparklines (top)
+  pushSpark(spark.soc, bat.socPct);
+  pushSpark(spark.solar, e.pIn);
+  pushSpark(spark.load, e.pOut);
+  pushSpark(spark.net, netW);
+
+  // flow viz
+  renderEnergyFlow(s);
 
   // fan (ESP32: device.fan je bool)
   setText("uiFan", pick(s, ["device.fan", "device.fan.on", "fan.on"], null) === true ? "ON" : "OFF");
@@ -617,6 +794,10 @@ function renderBrain(s) {
   setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
   // KPI (top bar)
   setText("uiKpiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
+
+  // sparkline (risk)
+  pushSpark(spark.risk, risk);
+
   const bar = el("uiRiskBar");
   if (bar) bar.style.width = Number.isFinite(risk) ? `${clamp(risk, 0, 100)}%` : "0%";
 
@@ -626,6 +807,9 @@ function renderBrain(s) {
   // Slunce (ESP32: brain.time.hoursToSunset a brain.solar.untilSunsetWh)
   setText("uiSunLine", String(pick(s, ["brain.time.hoursToSunset", "brain.hoursToSunset", "hoursToSunsetEst"], "—")));
   setText("uiSunHint", String(pick(s, ["brain.solar.untilSunsetWh", "brain.solarRemainingWhToSunset", "solarRemainingWhToSunset"], "—")));
+
+  // hero reasons
+  renderBrainReasons(s);
 
   const chips = [];
   if (mode && mode !== "—") chips.push(`Režim: ${mode}`);
