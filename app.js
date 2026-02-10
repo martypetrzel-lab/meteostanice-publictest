@@ -5,12 +5,31 @@
 // FIX: noční bilance bere z brain.nightBudget.* a je robustní vůči null
 // UX: Historie label teploty: "Venkovní teplota"
 
-const UI_VERSION = "3.38.0";
+const UI_VERSION = "3.38.1";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
 const setText = (id, text) => { const e = el(id); if (e) e.textContent = text; };
 const setHtml = (id, html) => { const e = el(id); if (e) e.innerHTML = html; };
+
+const PILL_KINDS = ["ok","warn","bad","neutral"];
+const setPill = (id, text, kind="neutral") => {
+  const e = el(id);
+  if (!e) return;
+  e.textContent = text ?? "—";
+  // keep existing classes (pill, small, etc.), only swap kind
+  PILL_KINDS.forEach(k => e.classList.remove(k));
+  if (kind && PILL_KINDS.includes(kind)) e.classList.add(kind);
+};
+
+const safeKindFromMode = (mode) => {
+  const m = String(mode || "").toUpperCase();
+  if (m === "NORMAL") return "ok";
+  if (m === "CAUTION") return "warn";
+  if (m === "CRITICAL") return "bad";
+  if (m === "PROTECT") return "bad";
+  return "neutral";
+};
 const setHref = (id, href) => { const e = el(id); if (e) e.href = href; };
 const show = (id, on) => { const e = el(id); if (e) e.classList.toggle("hidden", !on); };
 
