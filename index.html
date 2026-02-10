@@ -396,6 +396,47 @@
 
           <pre class="pre hidden" id="rawJson">—</pre>
         </div>
+
+        </div>
+
+        <div class="card locked" id="adminCard">
+          <div class="card-h">🔒 Admin (lokální odemknutí)</div>
+
+          <div class="kv">
+            <div class="k">Přihlášení</div>
+            <div class="v row">
+              <input id="adminPass" type="password" class="input" placeholder="Heslo (jen pro odemknutí UI)" />
+              <button id="btnAdminLogin" class="btn">Odemknout</button>
+              <button id="btnAdminLogout" class="btn ghost hidden">Odhlásit</button>
+              <span id="adminState" class="muted">Zamčeno</span>
+            </div>
+
+            <div class="k">ESP URL</div>
+            <div class="v">
+              <input id="espUrl" class="input" placeholder="http://192.168.50.19" />
+              <div class="muted tiny">Pozn.: pokud běží dashboard na HTTPS, prohlížeč může blokovat volání na HTTP (mixed content).</div>
+            </div>
+
+            <div id="adminControls" class="admin-controls">
+              <div class="k">Baterie – SOC</div>
+              <div class="v row">
+                <input id="socVal" class="input small" type="number" min="0" max="100" step="1" placeholder="0–100" />
+                <button id="btnSetSoc" class="btn danger">Nastavit SOC</button>
+              </div>
+
+              <div class="k">Větrák</div>
+              <div class="v row">
+                <button id="btnFanAuto" class="btn">AUTO</button>
+                <input id="fanDuty" class="input small" type="number" min="0" max="100" step="1" placeholder="duty %" />
+                <button id="btnFanSet" class="btn danger">Nastavit duty</button>
+                <button id="btnFanOff" class="btn ghost">OFF</button>
+              </div>
+
+              <div class="k"></div>
+              <div class="v"><span id="adminOut" class="muted">—</span></div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 

@@ -587,3 +587,15 @@ code{font-family:var(--mono);font-size:12px}
   .kpiBar{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+
+
+
+/* Admin panel */
+#adminCard .tiny{font-size:12px; opacity:.75; margin-top:6px}
+#adminCard .admin-controls{margin-top:10px}
+#adminCard.locked .admin-controls{opacity:.35; pointer-events:none; filter:saturate(.7)}
+.input.small{max-width:120px}
+.btn.danger{
+  background: rgba(255,99,132,.14);
+  border: 1px solid rgba(255,99,132,.35);
+}
