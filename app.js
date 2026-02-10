@@ -5,7 +5,7 @@
 // FIX: noční bilance bere z brain.nightBudget.* a je robustní vůči null
 // UX: Historie label teploty: "Venkovní teplota"
 
-const UI_VERSION = "3.39.2";
+const UI_VERSION = "3.39.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
@@ -13,47 +13,6 @@ const setText = (id, text) => { const e = el(id); if (e) e.textContent = text; }
 const setHtml = (id, html) => { const e = el(id); if (e) e.innerHTML = html; };
 
 const PILL_KINDS = ["ok","warn","bad","neutral"];
-
-// ===== Admin (lokální odemknutí UI) + ESP32 control endpoints =====
-// Pozn.: Odemknutí je jen UI gate (není to bezpečnost). Pro skutečné zabezpečení dávej auth přímo do ESP.
-const LS_ADMIN_UNLOCK = "eira_admin_unlocked";
-const LS_ESP_URL = "eira_esp_url";
-
-const isAdminUnlocked = () => localStorage.getItem(LS_ADMIN_UNLOCK) === "1";
-const setAdminUnlocked = (v) => localStorage.setItem(LS_ADMIN_UNLOCK, v ? "1" : "0");
-
-const normalizeEspUrl = (u) => {
-  let s = String(u || "").trim();
-  if (!s) s = "http://192.168.50.19";
-  if (!/^https?:\/\//i.test(s)) s = "http://" + s;
-  s = s.replace(/\/+$/,"");
-  return s;
-};
-
-const setEspUrl = (u) => localStorage.setItem(LS_ESP_URL, normalizeEspUrl(u));
-const getEspUrl = () => normalizeEspUrl(localStorage.getItem(LS_ESP_URL) || "http://192.168.50.19");
-
-async function espFetch(path) {
-  const base = getEspUrl();
-  const url = base + path;
-  setText("adminOut", `Odesílám: ${url}`);
-  try {
-    const r = await fetch(url, { cache: "no-store" });
-    // Pozn.: může být CORS/mixed content → pak to spadne do catch
-    if (r.ok) {
-      setText("adminOut", `OK: ${url}`);
-      return true;
-    }
-    // i když není ok, alespoň víme status
-    setText("adminOut", `HTTP ${r.status}: ${url}`);
-    return false;
-  } catch (e) {
-    setText("adminOut", `Chyba: ${e.message} (pozor na HTTPS→HTTP mixed content)`);
-    return false;
-  }
-}
-
-
 const setPill = (id, text, kind="neutral") => {
   const e = el(id);
   if (!e) return;
@@ -1139,109 +1098,12 @@ function setupSettings() {
   });
 }
 
-
-function setupAdminPanel() {
-  const adminCard = el("adminCard");
-  const inpPass = el("adminPass");
-  const btnLogin = el("btnAdminLogin");
-  const btnLogout = el("btnAdminLogout");
-  const adminState = el("adminState");
-
-  const espUrlInp = el("espUrl");
-  const socInp = el("socVal");
-  const btnSoc = el("btnSetSoc");
-
-  const btnFanAuto = el("btnFanAuto");
-  const dutyInp = el("fanDuty");
-  const btnFanSet = el("btnFanSet");
-  const btnFanOff = el("btnFanOff");
-
-  const apply = () => {
-    const unlocked = isAdminUnlocked();
-    if (adminCard) adminCard.classList.toggle("locked", !unlocked);
-    if (btnLogout) btnLogout.classList.toggle("hidden", !unlocked);
-    if (btnLogin) btnLogin.classList.toggle("hidden", unlocked);
-    if (inpPass) inpPass.classList.toggle("hidden", unlocked);
-    if (adminState) adminState.textContent = unlocked ? "Odemčeno" : "Zamčeno";
-  };
-
-  if (espUrlInp) {
-    espUrlInp.value = getEspUrl();
-    espUrlInp.addEventListener("change", () => setEspUrl(espUrlInp.value));
-    espUrlInp.addEventListener("blur", () => setEspUrl(espUrlInp.value));
-  }
-
-  if (btnLogin && inpPass) {
-    btnLogin.addEventListener("click", () => {
-      const p = String(inpPass.value || "").trim();
-      if (!p) {
-        setText("adminOut", "Zadej heslo (jen pro odemknutí UI).");
-        return;
-      }
-      // UI-only gate
-      setAdminUnlocked(true);
-      inpPass.value = "";
-      apply();
-      setText("adminOut", "Admin ovládání odemčeno (lokálně v prohlížeči).");
-    });
-  }
-
-  if (btnLogout) {
-    btnLogout.addEventListener("click", () => {
-      setAdminUnlocked(false);
-      apply();
-      setText("adminOut", "Zamčeno.");
-    });
-  }
-
-  if (btnSoc && socInp) {
-    btnSoc.addEventListener("click", async () => {
-      const n = Number(socInp.value);
-      if (!Number.isFinite(n) || n < 0 || n > 100) {
-        setText("adminOut", "SOC musí být 0–100.");
-        return;
-      }
-      await espFetch(`/battery/set?soc=${Math.round(n)}`);
-    });
-  }
-
-  const tryFanAuto = async () => {
-    // prefer standard: /fan/set?auto=1 ; fallback to user's variant
-    const ok = await espFetch(`/fan/set?auto=1`);
-    if (!ok) await espFetch(`/fan/set?duty=auto=1`);
-  };
-
-  if (btnFanAuto) btnFanAuto.addEventListener("click", tryFanAuto);
-
-  if (btnFanSet && dutyInp) {
-    btnFanSet.addEventListener("click", async () => {
-      const n = Number(dutyInp.value);
-      if (!Number.isFinite(n) || n < 0 || n > 100) {
-        setText("adminOut", "Duty musí být 0–100.");
-        return;
-      }
-      await espFetch(`/fan/set?duty=${Math.round(n)}`);
-    });
-  }
-
-  if (btnFanOff) {
-    btnFanOff.addEventListener("click", async () => {
-      // OFF = duty 0 (bez auto)
-      await espFetch(`/fan/set?duty=0`);
-    });
-  }
-
-  apply();
-}
-
-
 (async function boot() {
   console.log(`[UI] boot ${UI_VERSION}`, new Date().toISOString());
 
   setupTabs();
   setupHistoryControls();
   setupSettings();
-  setupAdminPanel();
 
   const q = getBackendFromQuery();
   if (q) setBackend(q);
