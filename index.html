@@ -14,7 +14,7 @@
         <div>
           <div class="title">Meteostanice</div>
           <div class="subtitle">
-            <span id="statusText">Dashboard • UI 3.36.0 • načítám…</span>
+            <span id="statusText">Dashboard • UI 3.37.0 • načítám…</span>
             <span class="dot">•</span>
             <a id="stateLink" href="#" target="_blank" rel="noreferrer">/state</a>
           </div>
@@ -33,105 +33,153 @@
     <main class="content">
       <!-- DNES -->
       <section class="panel active" id="tab-today">
-        <div class="grid2">
-          <div class="card">
-            <div class="card-h">Noční bilance</div>
-            <div class="kv">
-              <div class="k">Režim</div><div class="v"><span id="uiNightMode">—</span></div>
-              <div class="k">Coverage</div><div class="v"><span id="uiNightCoverage">—</span> %</div>
-              <div class="k">Deficit</div><div class="v"><span id="uiNightDeficit">—</span> Wh</div>
-              <div class="k">Zbývá do rána</div><div class="v"><span id="uiNightHours">—</span> h</div>
-
-              <div class="k">P_noc (vybraný)</div><div class="v"><span id="uiNightP">—</span> W</div>
-              <div class="k">NightNeed</div><div class="v"><span id="uiNightNeed">—</span> Wh</div>
-              <div class="k">Rezerva</div><div class="v"><span id="uiNightReserve">—</span> Wh</div>
-              <div class="k">Celkem budget</div><div class="v"><span id="uiNightTotal">—</span> Wh</div>
-
-              <div class="k">Dostupné Wh</div><div class="v"><span id="uiNightAvail">—</span> Wh</div>
-              <div class="k">Baterie</div><div class="v"><span id="uiNightBat">—</span> Wh</div>
-              <div class="k">Pod 5%</div><div class="v"><span id="uiNightFloor">—</span> Wh</div>
-            </div>
+        <!-- KPI BAR -->
+        <div class="kpiBar">
+          <div class="kpiItem">
+            <div class="kpiLabel">Režim</div>
+            <div class="kpiValue"><span id="uiKpiMode">—</span></div>
           </div>
-
-          <div class="card">
-            <div class="card-h">Prostředí</div>
-            <div class="kv">
-              <div class="k">Světlo</div><div class="v"><span id="uiLight">—</span> lx</div>
-              <div class="k">Teplota (box)</div><div class="v"><span id="uiBoxTemp">—</span> °C</div>
-              <div class="k">Vlhkost</div><div class="v"><span id="uiHum">—</span> %</div>
-              <div class="k">Venku</div><div class="v"><span id="uiOutdoorTemp">—</span> °C</div>
-
-              <div class="k">Solární potenciál</div><div class="v"><span id="uiSolarPot">—</span> W</div>
-              <div class="k">Scénář</div><div class="v"><span id="uiScenario">—</span></div>
-              <div class="k">Fáze 21denního cyklu</div><div class="v"><span id="uiPhase">—</span></div>
-            </div>
-            <div class="chips" id="uiWeatherChips"></div>
+          <div class="kpiItem">
+            <div class="kpiLabel">SOC</div>
+            <div class="kpiValue"><span id="uiKpiSoc">—</span><span class="unit">%</span></div>
+          </div>
+          <div class="kpiItem">
+            <div class="kpiLabel">Solár</div>
+            <div class="kpiValue"><span id="uiKpiSolar">—</span><span class="unit">W</span></div>
+          </div>
+          <div class="kpiItem">
+            <div class="kpiLabel">Zátěž</div>
+            <div class="kpiValue"><span id="uiKpiLoad">—</span><span class="unit">W</span></div>
+          </div>
+          <div class="kpiItem">
+            <div class="kpiLabel">NET</div>
+            <div class="kpiValue"><span id="uiKpiNet">—</span><span class="unit">W</span></div>
+          </div>
+          <div class="kpiItem">
+            <div class="kpiLabel">Riziko</div>
+            <div class="kpiValue"><span id="uiKpiRisk">—</span><span class="unit">/100</span></div>
+          </div>
+          <div class="kpiItem">
+            <div class="kpiLabel">Battery-safe</div>
+            <div class="kpiValue"><span id="uiKpiSafe" class="pill">—</span></div>
           </div>
         </div>
 
-        <div class="grid2">
-          <div class="card">
-            <div class="card-h">Energie</div>
-            <div class="kv">
-              <div class="k">SOC</div><div class="v"><span id="uiSoc">—</span> %</div>
-              <div class="k">Solár</div><div class="v"><span id="uiSolar">—</span> W</div>
-              <div class="k">Zátěž</div><div class="v"><span id="uiLoad">—</span> W</div>
-              <div class="k">Větrák</div><div class="v"><span id="uiFan">—</span></div>
+        <!-- MAIN LAYOUT -->
+        <div class="layout2">
+          <!-- LEFT COLUMN -->
+          <div class="col">
+            <div class="card">
+              <div class="card-h">Energie</div>
+              <div class="kv">
+                <div class="k">SOC</div><div class="v"><span id="uiSoc">—</span> %</div>
+                <div class="k">Solár</div><div class="v"><span id="uiSolar">—</span> W</div>
+                <div class="k">Zátěž</div><div class="v"><span id="uiLoad">—</span> W</div>
+                <div class="k">NET</div><div class="v"><span id="uiNetW">—</span> W</div>
 
-              <div class="k">Battery-safe</div><div class="v"><span id="uiBatSafe">—</span></div>
-              <div class="k">Noční coverage</div><div class="v"><span id="uiCovQuick">—</span> %</div>
-              <div class="k">Noční deficit</div><div class="v"><span id="uiDefQuick">—</span> Wh</div>
+                <div class="k">Větrák</div><div class="v"><span id="uiFan">—</span></div>
+                <div class="k">Battery-safe</div><div class="v"><span id="uiBatSafe">—</span></div>
 
-              <div class="k">Stav energie</div><div class="v"><span id="uiPowerState">—</span></div>
-              <div class="k">Power-path</div><div class="v"><span id="uiPowerPath">—</span></div>
+                <div class="k">Noční coverage</div><div class="v"><span id="uiCovQuick">—</span> %</div>
+                <div class="k">Noční deficit</div><div class="v"><span id="uiDefQuick">—</span> Wh</div>
+
+                <div class="k">Stav energie</div><div class="v"><span id="uiPowerState">—</span></div>
+                <div class="k">Power-path</div><div class="v"><span id="uiPowerPath">—</span></div>
+              </div>
             </div>
+
+            <details class="detailsCard" id="nightDetails" open>
+              <summary class="detailsSummary">
+                <span>Noční bilance</span>
+                <span class="detailsMeta">
+                  <span class="mini"><span id="uiNightCoverageMini">—</span>%</span>
+                  <span class="mini"><span id="uiNightDeficitMini">—</span>Wh</span>
+                  <span class="mini"><span id="uiNightHoursMini">—</span>h</span>
+                </span>
+              </summary>
+
+              <div class="card cardInner">
+                <div class="kv">
+                  <div class="k">Režim</div><div class="v"><span id="uiNightMode">—</span></div>
+                  <div class="k">Coverage</div><div class="v"><span id="uiNightCoverage">—</span> %</div>
+                  <div class="k">Deficit</div><div class="v"><span id="uiNightDeficit">—</span> Wh</div>
+                  <div class="k">Zbývá do rána</div><div class="v"><span id="uiNightHours">—</span> h</div>
+
+                  <div class="k">P_noc (vybraný)</div><div class="v"><span id="uiNightP">—</span> W</div>
+                  <div class="k">NightNeed</div><div class="v"><span id="uiNightNeed">—</span> Wh</div>
+                  <div class="k">Rezerva</div><div class="v"><span id="uiNightReserve">—</span> Wh</div>
+                  <div class="k">Celkem budget</div><div class="v"><span id="uiNightTotal">—</span> Wh</div>
+
+                  <div class="k">Dostupné Wh</div><div class="v"><span id="uiNightAvail">—</span> Wh</div>
+                  <div class="k">Baterie</div><div class="v"><span id="uiNightBat">—</span> Wh</div>
+                  <div class="k">Pod 5%</div><div class="v"><span id="uiNightFloor">—</span> Wh</div>
+                </div>
+              </div>
+            </details>
           </div>
 
-          <div class="card">
-            <div class="card-h">Mozek – rozhodnutí</div>
+          <!-- RIGHT COLUMN -->
+          <div class="col">
+            <div class="card">
+              <div class="card-h">Mozek – rozhodnutí</div>
 
-            <div class="brainTop">
-              <div class="brainMsg">
-                <div class="msg" id="uiMsg">—</div>
-
-                <!-- ✅ Denní hláška do DNES -->
-                <div class="msgSub" id="uiDailyMsg">—</div>
-
-                <div class="msgSub" id="uiDetails">—</div>
+              <div class="brainTop">
+                <div class="brainMsg">
+                  <div class="msg" id="uiMsg">—</div>
+                  <div class="msgSub" id="uiDailyMsg">—</div>
+                  <div class="msgSub" id="uiDetails">—</div>
+                </div>
+                <div class="brainBadge" id="uiModeBadge">—</div>
               </div>
-              <div class="brainBadge" id="uiModeBadge">—</div>
+
+              <div class="brainGrid">
+                <div class="brainMetric">
+                  <div class="label">Riziko</div>
+                  <div class="value"><span id="uiRisk">—</span> / 100</div>
+                  <div class="bar"><div class="barFill" id="uiRiskBar"></div></div>
+                </div>
+
+                <div class="brainMetric">
+                  <div class="label">Výdrž</div>
+                  <div class="value"><span id="uiBatHours">—</span> h</div>
+                  <div class="hint" id="uiBatHint">—</div>
+                </div>
+
+                <div class="brainMetric">
+                  <div class="label">Slunce</div>
+                  <div class="value" id="uiSunLine">—</div>
+                  <div class="hint" id="uiSunHint">—</div>
+                </div>
+
+                <div class="brainMetric">
+                  <div class="label">Trend rizika</div>
+                  <canvas id="riskCanvas" width="640" height="140"></canvas>
+                  <div class="hint">Poslední ~2 hodiny (lokálně v prohlížeči)</div>
+                </div>
+              </div>
+
+              <div class="chips" id="uiBrainChips"></div>
             </div>
 
-            <div class="brainGrid">
-              <div class="brainMetric">
-                <div class="label">Riziko</div>
-                <div class="value"><span id="uiRisk">—</span> / 100</div>
-                <div class="bar"><div class="barFill" id="uiRiskBar"></div></div>
-              </div>
+            <div class="card">
+              <div class="card-h">Prostředí</div>
+              <div class="kv">
+                <div class="k">Světlo</div><div class="v"><span id="uiLight">—</span> lx</div>
+                <div class="k">Teplota (box)</div><div class="v"><span id="uiBoxTemp">—</span> °C</div>
+                <div class="k">Vlhkost</div><div class="v"><span id="uiHum">—</span> %</div>
+                <div class="k">Venku</div><div class="v"><span id="uiOutdoorTemp">—</span> °C</div>
 
-              <div class="brainMetric">
-                <div class="label">Výdrž</div>
-                <div class="value"><span id="uiBatHours">—</span> h</div>
-                <div class="hint" id="uiBatHint">—</div>
+                <div class="k">Solární potenciál</div><div class="v"><span id="uiSolarPot">—</span> W</div>
+                <div class="k">Scénář</div><div class="v"><span id="uiScenario">—</span></div>
+                <div class="k">Fáze 21denního cyklu</div><div class="v"><span id="uiPhase">—</span></div>
               </div>
-
-              <div class="brainMetric">
-                <div class="label">Slunce</div>
-                <div class="value" id="uiSunLine">—</div>
-                <div class="hint" id="uiSunHint">—</div>
-              </div>
-
-              <div class="brainMetric">
-                <div class="label">Trend rizika</div>
-                <canvas id="riskCanvas" width="640" height="140"></canvas>
-                <div class="hint">Poslední ~2 hodiny (lokálně v prohlížeči)</div>
-              </div>
+              <div class="chips" id="uiWeatherChips"></div>
             </div>
-
-            <div class="chips" id="uiBrainChips"></div>
           </div>
         </div>
       </section>
+
+      <!-- HISTORIE --></section>
 
       <!-- HISTORIE -->
       <section class="panel" id="tab-history">
@@ -315,7 +363,7 @@
     </main>
 
     <footer class="foot">
-      UI 3.36.0 • data z /state • ©
+      UI 3.37.0 • data z /state • ©
     </footer>
   </div>
 

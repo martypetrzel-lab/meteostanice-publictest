@@ -325,3 +325,106 @@ code{font-family:var(--mono);font-size:12px}
   font-size:12px;
   opacity:.85;
 }
+
+
+/* =========================
+   Variant A – KPI + layout2
+   ========================= */
+.layout2{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:14px;
+  margin-top: 10px;
+}
+.col{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.kpiBar{
+  display:grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap:10px;
+  margin: 6px 0 14px;
+}
+.kpiItem{
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.04);
+  border-radius: calc(var(--r) - 6px);
+  padding: 10px 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.22);
+  min-height: 64px;
+}
+.kpiLabel{
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .02em;
+}
+.kpiValue{
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  display:flex;
+  align-items: baseline;
+  gap:6px;
+}
+.kpiValue .unit{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.pill{
+  display:inline-flex;
+  align-items:center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(124,192,255,.10);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detailsCard{
+  border:1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(255,255,255,.03);
+  overflow:hidden;
+}
+.detailsSummary{
+  cursor:pointer;
+  padding: 12px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  user-select:none;
+  font-weight: 700;
+}
+.detailsSummary::-webkit-details-marker{ display:none; }
+.detailsMeta{
+  display:flex;
+  gap:10px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+.detailsMeta .mini{
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.03);
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+.cardInner{
+  margin: 0 12px 12px;
+}
+
+/* Responsiveness */
+@media (max-width: 1120px){
+  .kpiBar{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 760px){
+  .layout2{ grid-template-columns: 1fr; }
+  .kpiBar{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpiValue{ font-size: 18px; }
+}

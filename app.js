@@ -1,11 +1,11 @@
-// app.js – Meteostanice UI (ESP32 HW compatible adapter) – UI 3.36.1
+// app.js – Meteostanice UI (ESP32 HW compatible adapter) – UI 3.37.0
 // FIX: SOC z ESP32 je v energy.soc.soc_est (0..1)
 // FIX: Badge "DAY/NIGHT" bere z time.isDay (ne z brain.mode)
 // FIX: Battery-safe = brain.mode (NORMAL/CAUTION/CRITICAL/PROTECT)
 // FIX: noční bilance bere z brain.nightBudget.* a je robustní vůči null
 // UX: Historie label teploty: "Venkovní teplota"
 
-const UI_VERSION = "3.36.1";
+const UI_VERSION = "3.37.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
@@ -505,16 +505,30 @@ function renderTodayCards(s) {
 
   const bat = getBattery(s);
   setText("uiSoc", Number.isFinite(bat.socPct) ? fmt0(bat.socPct) : "—");
+  // KPI (top bar)
+  setText("uiKpiSoc", Number.isFinite(bat.socPct) ? fmt0(bat.socPct) : "—");
 
   const e = getEnergy(s);
   setText("uiSolar", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
   setText("uiLoad", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
 
+  // NET power (W) = IN - OUT
+  const netW = (Number.isFinite(e.pIn) && Number.isFinite(e.pOut)) ? (e.pIn - e.pOut) : NaN;
+  setText("uiNetW", Number.isFinite(netW) ? fmt3(netW) : "—");
+
+  // KPI (top bar)
+  setText("uiKpiSolar", Number.isFinite(e.pIn) ? fmt3(e.pIn) : "—");
+  setText("uiKpiLoad", Number.isFinite(e.pOut) ? fmt3(e.pOut) : "—");
+  setText("uiKpiNet", Number.isFinite(netW) ? fmt3(netW) : "—");
+
   // fan (ESP32: device.fan je bool)
   setText("uiFan", pick(s, ["device.fan", "device.fan.on", "fan.on"], null) === true ? "ON" : "OFF");
 
   // Battery-safe = režim mozku
-  setText("uiBatSafe", getBatterySafeMode(s));
+  const safeMode = getBatterySafeMode(s);
+  setText("uiBatSafe", safeMode);
+  // KPI (top bar)
+  setText("uiKpiSafe", safeMode);
 
   const nb = getNightBudget(s);
   setText("uiCovQuick", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
@@ -538,6 +552,11 @@ function renderNightBudget(s) {
   setText("uiNightDeficit", Number.isFinite(nb.deficitWh) ? fmt1(nb.deficitWh) : "—");
 
   setText("uiNightHours", Number.isFinite(nb.remainingNightHours) ? fmt1(nb.remainingNightHours) : "—");
+
+  // Mini summary (details header)
+  setText("uiNightCoverageMini", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
+  setText("uiNightDeficitMini", Number.isFinite(nb.deficitWh) ? fmt1(nb.deficitWh) : "—");
+  setText("uiNightHoursMini", Number.isFinite(nb.remainingNightHours) ? fmt1(nb.remainingNightHours) : "—");
   setText("uiNightP", Number.isFinite(nb.pNightSelectedW) ? fmt3(nb.pNightSelectedW) : "—");
 
   setText("uiNightNeed", Number.isFinite(nb.nightNeedWh) ? fmt1(nb.nightNeedWh) : "—");
@@ -570,10 +589,15 @@ function renderBrain(s) {
   setText("uiDetails", Array.isArray(details) ? details.join(" • ") : String(details || "—"));
 
   // Badge vpravo v boxu: DAY/NIGHT (podle času)
-  setText("uiModeBadge", dayNightLabel(isDay));
+  const dayNight = dayNightLabel(isDay);
+  setText("uiModeBadge", dayNight);
+  // KPI (top bar)
+  setText("uiKpiMode", dayNight);
 
   const risk = num(pick(s, ["brain.risk", "brain.riskScore", "brain.riskPct"], NaN), NaN);
   setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
+  // KPI (top bar)
+  setText("uiKpiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
   const bar = el("uiRiskBar");
   if (bar) bar.style.width = Number.isFinite(risk) ? `${clamp(risk, 0, 100)}%` : "0%";
 
