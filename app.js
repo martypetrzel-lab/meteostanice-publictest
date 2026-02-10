@@ -1,11 +1,11 @@
-// app.js – Meteostanice UI (ESP32 HW compatible adapter) – UI 3.37.0
+// app.js – Meteostanice UI (ESP32 HW compatible adapter) – UI 3.37.1
 // FIX: SOC z ESP32 je v energy.soc.soc_est (0..1)
 // FIX: Badge "DAY/NIGHT" bere z time.isDay (ne z brain.mode)
 // FIX: Battery-safe = brain.mode (NORMAL/CAUTION/CRITICAL/PROTECT)
 // FIX: noční bilance bere z brain.nightBudget.* a je robustní vůči null
 // UX: Historie label teploty: "Venkovní teplota"
 
-const UI_VERSION = "3.37.0";
+const UI_VERSION = "3.38.0";
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
@@ -528,7 +528,7 @@ function renderTodayCards(s) {
   const safeMode = getBatterySafeMode(s);
   setText("uiBatSafe", safeMode);
   // KPI (top bar)
-  setText("uiKpiSafe", safeMode);
+  setPill("uiKpiSafe", safeMode, safeKindFromMode(safeMode));
 
   const nb = getNightBudget(s);
   setText("uiCovQuick", Number.isFinite(nb.coveragePct) ? fmt0(nb.coveragePct) : "—");
@@ -592,7 +592,7 @@ function renderBrain(s) {
   const dayNight = dayNightLabel(isDay);
   setText("uiModeBadge", dayNight);
   // KPI (top bar)
-  setText("uiKpiMode", dayNight);
+  setPill("uiKpiMode", dayNight, isDay ? "ok" : "neutral");
 
   const risk = num(pick(s, ["brain.risk", "brain.riskScore", "brain.riskPct"], NaN), NaN);
   setText("uiRisk", Number.isFinite(risk) ? fmt0(risk) : "—");
@@ -799,9 +799,11 @@ function startLoop() {
       const backend = getBackend();
       const s = await fetchState();
       setText("statusText", `Dashboard • ${new Date(getNowTs(s)).toLocaleString("cs-CZ")} • UI ${UI_VERSION} • ${backend}`);
+      setPill("onlinePill","ONLINE","ok");
       render(s);
     } catch (e) {
       setText("statusText", `Dashboard • chyba: ${e.message} • UI ${UI_VERSION}`);
+      setPill("onlinePill","OFFLINE","bad");
     }
   };
 
