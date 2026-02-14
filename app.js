@@ -5,7 +5,121 @@
 // FIX: noční bilance bere z brain.nightBudget.* a je robustní vůči null
 // UX: Historie label teploty: "Venkovní teplota"
 
-const UI_VERSION = "3.39.0";
+const UI_VERSION = "3.40.0-1";
+
+// ===== Lifetime history (DB) – UI 3.40.0 =====
+let historyRangeDays = 365;
+let historyDb = { days: [], records: null, onThisDay: null, ok: false, error: null };
+
+function getBackendBase(){
+  const input = document.getElementById("backendUrl");
+  const saved = (input && input.value) ? input.value : (localStorage.getItem("backendUrl") || "");
+  return (saved || DEFAULT_BACKEND).replace(/\/$/,"");
+}
+
+async function fetchJsonSafe(url){
+  try{
+    const r = await fetch(url, { cache:"no-store" });
+    const j = await r.json();
+    return j;
+  } catch(e){
+    return { ok:false, error:String(e) };
+  }
+}
+
+async function loadHistoryDb(){
+  const base = getBackendBase();
+  const rangeUrl = `${base}/history/range?days=${encodeURIComponent(historyRangeDays)}`;
+  const recUrl = `${base}/history/records`;
+  const onUrl = `${base}/history/onthisday`;
+  const [range, rec, on] = await Promise.all([fetchJsonSafe(rangeUrl), fetchJsonSafe(recUrl), fetchJsonSafe(onUrl)]);
+  const ok = !!(range && range.ok);
+  historyDb = {
+    ok,
+    error: ok ? null : (range?.error || "DB history not available"),
+    days: ok ? (range.days || []) : [],
+    records: rec && rec.ok ? rec.records : null,
+    onThisDay: on && on.ok ? on : null,
+  };
+}
+
+function initHistoryRangeButtons(){
+  const box = document.getElementById("historyRangeBtns");
+  if (!box) return;
+  const buttons = [...box.querySelectorAll("button[data-range]")];
+  buttons.forEach(b => {
+    b.onclick = async () => {
+      const d = Number(b.getAttribute("data-range") || 365);
+      historyRangeDays = d;
+      buttons.forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      await loadHistoryDb();
+      renderHistoryDb();
+    };
+  });
+}
+
+function fmtDay(d){
+  if (!d) return "—";
+  return String(d).slice(0,10);
+}
+
+function renderHistoryDb(){
+  const st = document.getElementById("historyDbStatus");
+  if (!st) return;
+  if (!historyDb.ok){
+    st.textContent = "DB historie: OFF";
+    return;
+  }
+  st.textContent = `DB historie: ${historyDb.days.length} dní`; 
+
+  // Long-range charts (reuse week charts)
+  const days = historyDb.days || [];
+  const labels = days.map(r => fmtDay(r.day));
+  const tMin = days.map(r => num(r.temp_out_min, NaN));
+  const tMax = days.map(r => num(r.temp_out_max, NaN));
+  if (typeof updateLineChart === "function" && typeof ensureCharts === "function"){
+    ensureCharts();
+    updateLineChart(chartWeekTemp, labels, [
+      { label: "Min (°C)", data: tMin, borderWidth: 2, pointRadius: 0, tension: 0.2 },
+      { label: "Max (°C)", data: tMax, borderWidth: 2, pointRadius: 0, tension: 0.2 },
+    ]);
+
+    const net = days.map(r => num(r.net_wh, NaN));
+    updateLineChart(chartWeekEnergy, labels, [
+      { label: "Bilance (Wh)", data: net, borderWidth: 2, pointRadius: 0, tension: 0.2 }
+    ]);
+  }
+
+  const onLine = document.getElementById("onThisDayLine");
+  if (onLine){
+    const row = historyDb.onThisDay?.row;
+    if (!row){
+      onLine.textContent = "—";
+    } else {
+      const t = `${fmt1(num(row.temp_out_min, NaN))} / ${fmt1(num(row.temp_out_max, NaN))} °C`;
+      const e = `Solár ${fmt0(num(row.solar_wh, NaN))} Wh, Zátěž ${fmt0(num(row.load_wh, NaN))} Wh`;
+      onLine.textContent = `${historyDb.onThisDay.compareDay}: ${t} • ${e}`;
+    }
+  }
+
+  const grid = document.getElementById("recordsGrid");
+  if (grid){
+    const r = historyDb.records || {};
+    const items = [];
+    const add = (label, rec, unit) => {
+      if (!rec) return;
+      const v = Number.isFinite(+rec.value) ? `${(+rec.value).toFixed(1)}${unit}` : "—";
+      items.push(`<div class="sumItem"><div class="sumK">${label}</div><div class="sumV">${v} <span class="muted">(${fmtDay(rec.day)})</span></div></div>`);
+    };
+    add("Max teplota", r.maxTemp, "°C");
+    add("Min teplota", r.minTemp, "°C");
+    add("Max solár/den", r.maxSolar, " Wh");
+    add("Max zátěž/den", r.maxLoad, " Wh");
+    grid.innerHTML = items.length ? items.join("") : "—";
+  }
+}
+
 const DEFAULT_BACKEND = "https://meteostanice-simulator-node-production.up.railway.app";
 
 const el = (id) => document.getElementById(id);
@@ -1103,6 +1217,9 @@ function setupSettings() {
 
   setupTabs();
   setupHistoryControls();
+  initHistoryRangeButtons();
+  await loadHistoryDb();
+  renderHistoryDb();
   setupSettings();
 
   const q = getBackendFromQuery();

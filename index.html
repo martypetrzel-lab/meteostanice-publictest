@@ -223,6 +223,15 @@
         <div class="card">
           <div class="card-h">Historie – grafy + shrnutí</div>
           <div class="row">
+            <div class="muted">Rozsah:</div>
+            <div class="btnGroup" id="historyRangeBtns">
+              <button class="btn small" data-range="7">7 dní</button>
+              <button class="btn small" data-range="30">30 dní</button>
+              <button class="btn small active" data-range="365">Rok</button>
+            </div>
+            <span class="muted" id="historyDbStatus">—</span>
+          </div>
+          <div class="row">
             <div class="muted">Den:</div>
             <select id="daySelect" class="select"></select>
             <button id="btnDayPrev" class="btn ghost">←</button>
@@ -235,6 +244,16 @@
             <div class="summaryLine" id="daySummaryHeadline">—</div>
             <div class="summaryGrid" id="daySummaryGrid"></div>
             <div class="summaryNote" id="daySummaryNote">—</div>
+          </div>
+
+          <div class="summaryBox" id="onThisDayBox">
+            <div class="summaryTitle">Tento den před rokem</div>
+            <div class="summaryLine" id="onThisDayLine">—</div>
+          </div>
+
+          <div class="summaryBox" id="recordsBox">
+            <div class="summaryTitle">Rekordy</div>
+            <div class="summaryGrid" id="recordsGrid"></div>
           </div>
 
           <div class="grid2">
